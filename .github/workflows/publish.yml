@@ -3,6 +3,7 @@ name: Publish to npm
 on:
   push:
     branches: [master]
+  workflow_dispatch: # manual "Run workflow" button in the Actions tab
 
 jobs:
   publish:
@@ -40,8 +41,14 @@ jobs:
           if [ "$LOCAL" = "$PUBLISHED" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            npm version patch -m "chore: release v%s [skip ci]"
-            git push origin master --follow-tags
+            # Sync with master first — re-runs and racing pushes otherwise
+            # operate on a stale checkout and get rejected.
+            git pull --rebase origin master
+            RESYNCED=$(node -p "require('./package.json').version")
+            if [ "$RESYNCED" = "$PUBLISHED" ]; then
+              npm version patch -m "chore: release v%s [skip ci]"
+              git push origin master --follow-tags
+            fi
           fi
 
       - name: Publish
