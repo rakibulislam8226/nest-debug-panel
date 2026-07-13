@@ -201,6 +201,62 @@ describe('DebugModule disabled', () => {
   });
 });
 
+describe('DebugModule with a host-app response envelope interceptor', () => {
+  // Reproduces apps that wrap every response in { hasErrors, data, errors } —
+  // the debug routes must bypass that wrapper or the UI breaks.
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    const { APP_INTERCEPTOR } = await import('@nestjs/core');
+    const { map } = await import('rxjs/operators');
+    const moduleRef = await Test.createTestingModule({
+      imports: [DebugModule.forRoot({ enabled: true }), TestModule],
+      providers: [
+        {
+          provide: APP_INTERCEPTOR,
+          useValue: {
+            intercept: (_context: unknown, next: { handle: () => import('rxjs').Observable<unknown> }) =>
+              next.handle().pipe(map((data) => ({ hasErrors: false, data, errors: null }))),
+          },
+        },
+      ],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('business routes are wrapped, debug JSON API is NOT', async () => {
+    const business = await request(app.getHttpServer()).get('/users').expect(200);
+    expect(business.body).toEqual({ hasErrors: false, data: [{ id: 1 }], errors: null });
+
+    const list = await request(app.getHttpServer()).get('/__debug').expect(200);
+    expect(Array.isArray(list.body)).toBe(true); // raw array, no envelope
+    expect(list.body[0].url).toBe('/users');
+  });
+
+  it('the HTML dashboard renders despite the envelope interceptor', async () => {
+    await request(app.getHttpServer()).get('/users');
+    const page = await request(app.getHttpServer())
+      .get('/__debug')
+      .set('accept', 'text/html')
+      .expect(200)
+      .expect('content-type', /text\/html/);
+    expect(page.text).toContain('<!DOCTYPE html>');
+
+    const list = await request(app.getHttpServer()).get('/__debug');
+    const detail = await request(app.getHttpServer())
+      .get(`/__debug/${list.body[0].id}`)
+      .set('accept', 'text/html')
+      .expect(200)
+      .expect('content-type', /text\/html/);
+    expect(detail.text).toContain('Timeline');
+  });
+});
+
 describe('DebugModule fail-safety', () => {
   it('never breaks requests even when storage and plugins blow up', async () => {
     const app = await makeApp(
