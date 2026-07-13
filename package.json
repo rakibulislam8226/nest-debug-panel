@@ -1,0 +1,58 @@
+{
+  "name": "@nest-lens/core",
+  "version": "0.1.0",
+  "description": "Request inspector & profiler for NestJS — Django Silk-style debugging: SQL, Redis, HTTP calls, exceptions, memory and a per-request timeline.",
+  "license": "MIT",
+  "author": "nest-lens contributors",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "jest",
+    "test:cov": "jest --coverage",
+    "example": "ts-node example/main.ts",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": [
+    "nestjs",
+    "debug",
+    "profiler",
+    "inspector",
+    "silk",
+    "telescope",
+    "devtools",
+    "prisma",
+    "redis",
+    "observability"
+  ],
+  "peerDependencies": {
+    "@nestjs/common": "^9.0.0 || ^10.0.0 || ^11.0.0",
+    "@nestjs/core": "^9.0.0 || ^10.0.0 || ^11.0.0",
+    "reflect-metadata": ">=0.1.13",
+    "rxjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "@nestjs/testing": "^11.0.0",
+    "@types/express": "^5.0.0",
+    "@types/jest": "^29.5.0",
+    "@types/node": "^22.0.0",
+    "@types/supertest": "^6.0.0",
+    "jest": "^29.7.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.2.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

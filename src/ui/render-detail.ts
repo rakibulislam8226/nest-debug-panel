@@ -1,0 +1,231 @@
+import type { RequestProfile, TimelineEvent } from '../interfaces/profile.interface';
+import { esc, formatBytes, formatMs, jsonBlock, layout, statusClass } from './html';
+
+function overviewCards(profile: RequestProfile): string {
+  const cards: Array<[string, string, string?]> = [
+    ['Status', String(profile.statusCode ?? '—'), statusClass(profile.statusCode)],
+    ['Duration', formatMs(profile.durationMs), profile.slow ? 'err' : undefined],
+    ['SQL queries', String(profile.sql.length)],
+    ['Redis commands', String(profile.redis.length)],
+    ['HTTP calls', String(profile.http.length)],
+    ['Response size', formatBytes(profile.responseSize)],
+    ['IP', profile.ip ?? '—'],
+    ['Time', new Date(profile.startedAt).toLocaleTimeString()],
+  ];
+  return `<div class="cards">${cards
+    .map(
+      ([label, value, cls]) =>
+        `<div class="card"><div class="label">${esc(label)}</div><div class="value ${cls ?? ''}">${esc(value)}</div></div>`,
+    )
+    .join('')}</div>`;
+}
+
+function timelinePanel(profile: RequestProfile): string {
+  const total = Math.max(profile.durationMs ?? 1, 1);
+  const rows = profile.timeline
+    .map((event: TimelineEvent) => {
+      const left = Math.min((event.at / total) * 100, 99);
+      const width = event.durationMs !== undefined ? Math.min((event.durationMs / total) * 100, 100 - left) : 0.5;
+      const duration = event.durationMs !== undefined ? ` (${formatMs(event.durationMs)})` : '';
+      return `<div class="tl-row">
+        <div class="tl-at">${formatMs(event.at)}</div>
+        <div class="tl-track">
+          <div class="tl-bar k-${esc(event.kind)}" style="left:${left.toFixed(2)}%;width:${Math.max(width, 0.5).toFixed(2)}%"></div>
+          <div class="tl-label">${esc(event.label)}${esc(duration)}</div>
+        </div>
+      </div>`;
+    })
+    .join('');
+  return `<div class="tl">${rows || '<div class="empty">No timeline events</div>'}</div>`;
+}
+
+function sqlPanel(profile: RequestProfile, slowQueryThreshold: number): string {
+  const analysis = profile.sqlAnalysis;
+  if (profile.sql.length === 0) return '<div class="empty">No SQL queries captured</div>';
+
+  let alerts = '';
+  if (analysis) {
+    for (const group of analysis.possibleNPlusOne) {
+      alerts += `<div class="alert">⚠ Possible N+1 — executed ${group.count}× (${formatMs(group.totalTimeMs)} total):<br><code>${esc(group.sql.slice(0, 200))}</code></div>`;
+    }
+    for (const group of analysis.duplicates.filter(
+      (dup) => !analysis.possibleNPlusOne.includes(dup),
+    )) {
+      alerts += `<div class="alert">Duplicate query — executed ${group.count}×: <code>${esc(group.sql.slice(0, 160))}</code></div>`;
+    }
+  }
+
+  const summary = analysis
+    ? `<div class="cards">
+        <div class="card"><div class="label">Total queries</div><div class="value">${analysis.totalQueries}</div></div>
+        <div class="card"><div class="label">Total SQL time</div><div class="value">${formatMs(analysis.totalTimeMs)}</div></div>
+        <div class="card"><div class="label">Slowest</div><div class="value">${
+          analysis.slowestIndex >= 0 ? formatMs(profile.sql[analysis.slowestIndex]?.durationMs) : '—'
+        }</div></div>
+        <div class="card"><div class="label">Slow (≥${slowQueryThreshold}ms)</div><div class="value ${analysis.slowQueryCount > 0 ? 'warn' : ''}">${analysis.slowQueryCount}</div></div>
+      </div>`
+    : '';
+
+  const items = profile.sql
+    .map((query, index) => {
+      const slow = query.durationMs >= slowQueryThreshold;
+      const meta = [
+        query.source ? `<span class="pill">${esc(query.source)}</span>` : '',
+        query.model || query.operation
+          ? `<span class="pill">${esc([query.model, query.operation].filter(Boolean).join('.'))}</span>`
+          : '',
+        query.transactionId ? `<span class="pill">tx ${esc(query.transactionId)}</span>` : '',
+      ].join('');
+      return `<div class="event">
+        <div class="head"><span class="num">${index + 1}.</span>${meta}<span class="dur ${slow ? 'slow' : ''}">${formatMs(query.durationMs)}</span></div>
+        <pre>${esc(query.sql ?? '(no SQL captured)')}</pre>
+        ${query.params ? `<pre class="muted">params: ${esc(query.params)}</pre>` : ''}
+      </div>`;
+    })
+    .join('');
+
+  return `${summary}${alerts}${items}`;
+}
+
+function redisPanel(profile: RequestProfile): string {
+  if (profile.redis.length === 0) return '<div class="empty">No Redis commands captured</div>';
+  return profile.redis
+    .map(
+      (event, index) => `<div class="event">
+      <div class="head"><span class="num">${index + 1}.</span><strong>${esc(event.command)}</strong>${
+        event.error ? '<span class="pill hot">error</span>' : ''
+      }<span class="dur">${formatMs(event.durationMs)}</span></div>
+      <pre>${esc(event.args.join(' '))}</pre>
+      ${event.error ? `<pre class="err">${esc(event.error)}</pre>` : ''}
+    </div>`,
+    )
+    .join('');
+}
+
+function httpPanel(profile: RequestProfile): string {
+  if (profile.http.length === 0) return '<div class="empty">No outgoing HTTP calls captured</div>';
+  return profile.http
+    .map(
+      (event, index) => `<div class="event">
+      <div class="head">
+        <span class="num">${index + 1}.</span>
+        <strong>${esc(event.method)}</strong>
+        <span class="${statusClass(event.statusCode)}">${event.statusCode ?? '—'}</span>
+        <span class="pill">${esc(event.source)}</span>
+        <span class="dur">${formatMs(event.durationMs)}</span>
+      </div>
+      <pre>${esc(event.url)}</pre>
+      <div class="muted" style="font-size:12px">request: ${formatBytes(event.requestSize)} · response: ${formatBytes(event.responseSize)}</div>
+      ${event.error ? `<pre class="err">${esc(event.error)}</pre>` : ''}
+    </div>`,
+    )
+    .join('');
+}
+
+function exceptionPanel(profile: RequestProfile): string {
+  const exception = profile.exception;
+  if (!exception) return '<div class="empty">No exception</div>';
+  return `<div class="alert error"><strong>${esc(exception.name)}</strong>: ${esc(exception.message)}
+    ${exception.statusCode !== undefined ? `(status ${exception.statusCode})` : ''} — thrown at ${formatMs(exception.at)}</div>
+    ${exception.stack ? `<pre class="code">${esc(exception.stack)}</pre>` : ''}`;
+}
+
+function memoryPanel(profile: RequestProfile): string {
+  const memory = profile.memory;
+  if (!memory) return '<div class="empty">Memory profiling disabled</div>';
+  const rows: Array<[string, string]> = [];
+  if (memory.before) rows.push(['Heap used (start)', formatBytes(memory.before.heapUsed)]);
+  if (memory.after) {
+    rows.push(
+      ['Heap used (end)', formatBytes(memory.after.heapUsed)],
+      ['Heap total', formatBytes(memory.after.heapTotal)],
+      ['RSS', formatBytes(memory.after.rss)],
+      ['External', formatBytes(memory.after.external)],
+    );
+  }
+  if (memory.heapUsedDelta !== undefined) {
+    const sign = memory.heapUsedDelta >= 0 ? '+' : '−';
+    rows.push(['Heap delta', `${sign}${formatBytes(Math.abs(memory.heapUsedDelta))}`]);
+  }
+  if (memory.eventLoopDelayMs !== undefined) rows.push(['Event loop delay (mean)', `${memory.eventLoopDelayMs}ms`]);
+  return `<table class="kv">${rows.map(([key, value]) => `<tr><td>${esc(key)}</td><td>${esc(value)}</td></tr>`).join('')}</table>`;
+}
+
+const TAB_DEFS = [
+  'Timeline',
+  'SQL',
+  'Redis',
+  'HTTP',
+  'Exception',
+  'Memory',
+  'Headers',
+  'Body',
+  'Response',
+] as const;
+
+export function renderDetailPage(
+  profile: RequestProfile,
+  routePrefix: string,
+  slowQueryThreshold: number,
+): string {
+  const panels: Record<(typeof TAB_DEFS)[number], string> = {
+    Timeline: timelinePanel(profile),
+    SQL: sqlPanel(profile, slowQueryThreshold),
+    Redis: redisPanel(profile),
+    HTTP: httpPanel(profile),
+    Exception: exceptionPanel(profile),
+    Memory: memoryPanel(profile),
+    Headers: jsonBlock(profile.headers),
+    Body: jsonBlock(profile.body),
+    Response: jsonBlock(profile.responseBody),
+  };
+
+  const counts: Partial<Record<(typeof TAB_DEFS)[number], number>> = {
+    SQL: profile.sql.length,
+    Redis: profile.redis.length,
+    HTTP: profile.http.length,
+  };
+
+  const tabs = TAB_DEFS.map((name, index) => {
+    const count = counts[name] !== undefined ? ` (${counts[name]})` : '';
+    const hot = name === 'Exception' && profile.exception ? ' 🔥' : '';
+    return `<div class="tab ${index === 0 ? 'active' : ''}" data-tab="${name}">${name}${count}${hot}</div>`;
+  }).join('');
+
+  const panelDivs = TAB_DEFS.map(
+    (name, index) => `<div class="panel ${index === 0 ? 'active' : ''}" data-panel="${name}">${panels[name]}</div>`,
+  ).join('\n');
+
+  const userRow =
+    profile.user !== undefined
+      ? `<tr><td>User</td><td><pre class="code" style="padding:6px 10px">${esc(JSON.stringify(profile.user))}</pre></td></tr>`
+      : '';
+
+  const body = `
+  <p><a href="/${esc(routePrefix)}">← All requests</a></p>
+  <h2 style="margin:12px 0 4px; font-size: 18px;">
+    <span class="badge m-${esc(profile.method)}">${esc(profile.method)}</span>
+    ${esc(profile.url)}
+  </h2>
+  ${profile.route ? `<div class="muted">route: ${esc(profile.route)}</div>` : ''}
+  ${overviewCards(profile)}
+  <table class="kv">
+    <tr><td>Request ID</td><td>${esc(profile.id)}</td></tr>
+    <tr><td>Started</td><td>${esc(profile.startedAt)}</td></tr>
+    ${userRow}
+  </table>
+  <div class="tabs">${tabs}</div>
+  ${panelDivs}
+  <script>
+    document.querySelectorAll('.tab').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
+        document.querySelectorAll('.panel').forEach(function (p) { p.classList.remove('active'); });
+        tab.classList.add('active');
+        document.querySelector('[data-panel="' + tab.getAttribute('data-tab') + '"]').classList.add('active');
+      });
+    });
+  </script>`;
+
+  return layout(`nest-lens — ${profile.method} ${profile.url}`, body);
+}
