@@ -84,13 +84,13 @@ describe('DebugModule (integration)', () => {
   });
 
   beforeEach(async () => {
-    await request(app.getHttpServer()).delete('/nest-debug-panel');
+    await request(app.getHttpServer()).delete('/__debug');
   });
 
   it('captures a request end-to-end: SQL, timeline, response, analysis', async () => {
     await request(app.getHttpServer()).get('/users?page=2').expect(200);
 
-    const list = await request(app.getHttpServer()).get('/nest-debug-panel').expect(200);
+    const list = await request(app.getHttpServer()).get('/__debug').expect(200);
     const summaries = list.body as RequestSummary[];
     expect(summaries).toHaveLength(1);
     expect(summaries[0].method).toBe('GET');
@@ -99,7 +99,7 @@ describe('DebugModule (integration)', () => {
     expect(summaries[0].sqlCount).toBe(2);
 
     const detail = await request(app.getHttpServer())
-      .get(`/nest-debug-panel/${summaries[0].id}`)
+      .get(`/__debug/${summaries[0].id}`)
       .expect(200);
     const profile = detail.body as RequestProfile;
     expect(profile.queryParams).toEqual({ page: '2' });
@@ -119,9 +119,9 @@ describe('DebugModule (integration)', () => {
       .send({ name: 'ada', password: 'hunter2' })
       .expect(201);
 
-    const list = await request(app.getHttpServer()).get('/nest-debug-panel').expect(200);
+    const list = await request(app.getHttpServer()).get('/__debug').expect(200);
     const detail = await request(app.getHttpServer())
-      .get(`/nest-debug-panel/${list.body[0].id}`)
+      .get(`/__debug/${list.body[0].id}`)
       .expect(200);
     const profile = detail.body as RequestProfile;
     expect(profile.statusCode).toBe(201);
@@ -133,10 +133,10 @@ describe('DebugModule (integration)', () => {
   it('captures exceptions with stack traces', async () => {
     await request(app.getHttpServer()).get('/boom').expect(400);
 
-    const list = await request(app.getHttpServer()).get('/nest-debug-panel').expect(200);
+    const list = await request(app.getHttpServer()).get('/__debug').expect(200);
     expect(list.body[0].hasException).toBe(true);
     const detail = await request(app.getHttpServer())
-      .get(`/nest-debug-panel/${list.body[0].id}`)
+      .get(`/__debug/${list.body[0].id}`)
       .expect(200);
     const profile = detail.body as RequestProfile;
     expect(profile.statusCode).toBe(400);
@@ -148,24 +148,24 @@ describe('DebugModule (integration)', () => {
   it('skips ignored routes (option pattern + decorator + own routes)', async () => {
     await request(app.getHttpServer()).get('/health').expect(200);
     await request(app.getHttpServer()).get('/metrics').expect(200);
-    await request(app.getHttpServer()).get('/nest-debug-panel').expect(200);
+    await request(app.getHttpServer()).get('/__debug').expect(200);
 
-    const list = await request(app.getHttpServer()).get('/nest-debug-panel').expect(200);
+    const list = await request(app.getHttpServer()).get('/__debug').expect(200);
     expect(list.body).toHaveLength(0);
   });
 
   it('serves the HTML dashboard and detail page to browsers', async () => {
     await request(app.getHttpServer()).get('/users').expect(200);
     const page = await request(app.getHttpServer())
-      .get('/nest-debug-panel')
+      .get('/__debug')
       .set('accept', 'text/html')
       .expect(200)
       .expect('content-type', /text\/html/);
     expect(page.text).toContain('nest');
 
-    const list = await request(app.getHttpServer()).get('/nest-debug-panel');
+    const list = await request(app.getHttpServer()).get('/__debug');
     const detail = await request(app.getHttpServer())
-      .get(`/nest-debug-panel/${list.body[0].id}`)
+      .get(`/__debug/${list.body[0].id}`)
       .set('accept', 'text/html')
       .expect(200);
     expect(detail.text).toContain('Timeline');
@@ -174,13 +174,13 @@ describe('DebugModule (integration)', () => {
 
   it('clears history via DELETE', async () => {
     await request(app.getHttpServer()).get('/users');
-    await request(app.getHttpServer()).delete('/nest-debug-panel').expect(200, { cleared: true });
-    const list = await request(app.getHttpServer()).get('/nest-debug-panel');
+    await request(app.getHttpServer()).delete('/__debug').expect(200, { cleared: true });
+    const list = await request(app.getHttpServer()).get('/__debug');
     expect(list.body).toHaveLength(0);
   });
 
   it('returns 404 for unknown profile ids', async () => {
-    await request(app.getHttpServer()).get('/nest-debug-panel/nope').expect(404);
+    await request(app.getHttpServer()).get('/__debug/nope').expect(404);
   });
 });
 
@@ -197,7 +197,7 @@ describe('DebugModule disabled', () => {
 
   it('hides debug routes and does not intercept', async () => {
     await request(app.getHttpServer()).get('/users').expect(200);
-    await request(app.getHttpServer()).get('/nest-debug-panel').expect(404);
+    await request(app.getHttpServer()).get('/__debug').expect(404);
   });
 });
 
@@ -271,7 +271,7 @@ describe('DebugModule custom prefix + authorize', () => {
           (req as { headers: Record<string, string> }).headers['x-debug-key'] === 'secret',
       }),
     );
-    await request(app.getHttpServer()).get('/nest-debug-panel').expect(403);
-    await request(app.getHttpServer()).get('/nest-debug-panel').set('x-debug-key', 'secret').expect(200);
+    await request(app.getHttpServer()).get('/__debug').expect(403);
+    await request(app.getHttpServer()).get('/__debug').set('x-debug-key', 'secret').expect(200);
   });
 });

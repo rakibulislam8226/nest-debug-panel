@@ -7,7 +7,7 @@ async function bootstrap(): Promise<void> {
   await app.listen(port);
   console.log(`
   Example app:     http://localhost:${port}
-  Debug dashboard: http://localhost:${port}/nest-debug-panel
+  Debug dashboard: http://localhost:${port}/__debug
 
   Try:
     curl http://localhost:${port}/users

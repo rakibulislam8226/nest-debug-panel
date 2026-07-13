@@ -18,7 +18,7 @@ DebugModule.forRootAsync({
     enabled: config.get('DEBUG_ENABLED') === 'true',
     maxRequests: 500,
   }),
-  routePrefix: '/nest-debug-panel', // must be static in async mode
+  routePrefix: '/__debug', // must be static in async mode
 });
 ```
 
@@ -82,6 +82,11 @@ See the [plugin guide](plugins.md).
 | Export | Purpose |
 | --- | --- |
 | `PrismaPlugin` | `attach(client)` for raw `query` log events + `extension()` for request attribution |
+| `TypeOrmPlugin` | `attach(dataSource)` — wraps `createQueryRunner` so every query (repos, query builders, raw) is timed with SQL + params |
+| `SequelizePlugin` | `attach(sequelize)` — enables `benchmark`, wraps the `logging` hook (your logger keeps working) |
+| `MongoosePlugin` | `attach(mongoose)` — records collection ops via `mongoose.set('debug')` (no timing available from the hook) |
+| `KnexPlugin` | `attach(knex)` — `query`/`query-response`/`query-error` events correlated by uid; also covers Objection.js/Bookshelf |
+| `DrizzlePlugin` | pass `drizzlePlugin.logger()` as drizzle's `logger` option (no timing available from the hook) |
 | `RedisPlugin` / `instrumentRedisClient(client, recorder)` | times every command via a `sendCommand` wrapper (ioredis, node-redis) |
 | `AxiosPlugin` / `instrumentAxios(instance, recorder)` | request/response interceptors on any axios instance (`httpService.axiosRef`) |
 | `FetchPlugin` | patches `globalThis.fetch`; restored on shutdown |

@@ -29,9 +29,9 @@ interface TypedResponse {
 
 /**
  * Debug API + UI. Content-negotiated:
- *   GET    /nest-debug-panel      → HTML dashboard (browser) or JSON summaries (Accept: application/json)
- *   GET    /nest-debug-panel/:id  → HTML detail page or full JSON profile
- *   DELETE /nest-debug-panel      → clear history
+ *   GET    /__debug      → HTML dashboard (browser) or JSON summaries (Accept: application/json)
+ *   GET    /__debug/:id  → HTML detail page or full JSON profile
+ *   DELETE /__debug      → clear history
  *
  * The path is re-prefixed at bootstrap from `routePrefix`; the controller
  * itself is excluded from profiling.

@@ -14,4 +14,4 @@ export const HTTP_CODE_METADATA = '__httpCode__';
 export const PATH_METADATA = 'path';
 
 /** Default route prefix for the debug API + UI. */
-export const DEFAULT_ROUTE_PREFIX = 'nest-debug-panel';
+export const DEFAULT_ROUTE_PREFIX = '__debug';

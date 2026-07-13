@@ -14,7 +14,7 @@ GET /boom            8ms   500   exception
 
 - **Zero changes to business logic** — one module import and everything is captured automatically
 - **Request profiling** — method, URL, params, headers (redacted), body, user, IP, status, response body/size, duration
-- **Database profiling** — adapter-based (Prisma first-class): raw SQL, params, duration, total SQL time, slowest query, duplicate queries, **N+1 detection**
+- **Database profiling** — database-agnostic, adapter-based: **Prisma, TypeORM, Sequelize, Mongoose, Knex/Objection, Drizzle** (any underlying DB — Postgres, MySQL, SQLite, Mongo, ...): raw SQL, params, duration, total SQL time, slowest query, duplicate queries, **N+1 detection**
 - **Redis profiling** — every command with arguments and timing (ioredis & node-redis)
 - **HTTP client profiling** — Axios, `fetch`, Nest `HttpService`
 - **Exception tracking** — name, message, stack trace, status, time-to-failure
@@ -45,7 +45,7 @@ import { DebugModule } from 'nest-debug-panel';
 export class AppModule {}
 ```
 
-Open **`http://localhost:3000/nest-debug-panel`** — every request is now captured.
+Open **`http://localhost:3000/__debug`** — every request is now captured.
 
 ## Configuration
 
@@ -65,7 +65,7 @@ DebugModule.forRoot({
   slowQueryThreshold: 100,      // ms — queries at/above are flagged
   slowRequestThreshold: 500,    // ms — requests at/above are flagged
   nPlusOneThreshold: 5,         // repeated SELECTs to trigger the N+1 warning
-  routePrefix: '/nest-debug-panel',
+  routePrefix: '/__debug',
   ignore: ['/health', '/docs*', /^\/webhooks\//],
   redactKeys: ['password', 'secret', 'token', ...],
   redactHeaders: ['authorization', 'cookie', 'set-cookie', 'x-api-key'],
@@ -85,9 +85,65 @@ DebugModule.forRoot({
 - **Decorator**: `@DebugIgnore()` on any controller class or route handler
 - The debug routes themselves are always excluded.
 
-## Database profiling (Prisma)
+## Database profiling — works with any ORM / database
 
-Nothing database-specific lives in the core — adapters plug in. The Prisma adapter:
+Like Django Silk works with MySQL, Postgres or anything Django supports, nothing database-specific lives in the core. Adapters ship for the major ORMs — and because they hook the ORM (not the database), they work with whatever database sits underneath (Postgres, MySQL, SQLite, SQL Server, Mongo, ...):
+
+| ORM / query builder | Adapter | Raw SQL | Timing |
+| --- | --- | --- | --- |
+| Prisma | `PrismaPlugin` | ✅ | ✅ |
+| TypeORM | `TypeOrmPlugin` | ✅ | ✅ |
+| Sequelize | `SequelizePlugin` | ✅ | ✅ |
+| Knex (+ Objection.js, Bookshelf) | `KnexPlugin` | ✅ | ✅ |
+| Mongoose (MongoDB) | `MongoosePlugin` | operations + args | — |
+| Drizzle | `DrizzlePlugin` | ✅ | — |
+| anything else | call `recorder.recordSql(...)` from your own hook — see the [extension guide](docs/plugins.md) | | |
+
+All adapters are fail-open (a broken hook never breaks a query), structurally typed (no dependency on any ORM package), and pass through untouched outside profiled requests.
+
+### TypeORM
+
+```ts
+const typeormPlugin = new TypeOrmPlugin();
+// DebugModule.forRoot({ plugins: [typeormPlugin] })
+typeormPlugin.attach(dataSource); // after DataSource.initialize()
+```
+
+### Sequelize
+
+```ts
+const sequelizePlugin = new SequelizePlugin();
+// DebugModule.forRoot({ plugins: [sequelizePlugin] })
+sequelizePlugin.attach(sequelize); // your existing `logging` option keeps working
+```
+
+### Mongoose
+
+```ts
+const mongoosePlugin = new MongoosePlugin();
+// DebugModule.forRoot({ plugins: [mongoosePlugin] })
+mongoosePlugin.attach(mongoose); // the imported mongoose instance
+```
+
+### Knex / Objection.js / Bookshelf
+
+```ts
+const knexPlugin = new KnexPlugin();
+// DebugModule.forRoot({ plugins: [knexPlugin] })
+knexPlugin.attach(knex);
+```
+
+### Drizzle
+
+```ts
+const drizzlePlugin = new DrizzlePlugin();
+// DebugModule.forRoot({ plugins: [drizzlePlugin] })
+const db = drizzle(pool, { logger: drizzlePlugin.logger() });
+```
+
+### Prisma
+
+The Prisma adapter:
 
 ```ts
 // prisma.plugin.ts — create one shared instance
@@ -113,7 +169,7 @@ Use `db` for your queries. You get raw SQL, parameters, per-query duration, tota
 
 Why both steps? Prisma emits raw `query` events from its engine **outside** the request's async context. The extension runs **inside** it and correlates the two (see `docs/plugins.md` for details). If you skip step 1, you still get ORM-level events (`User.findMany`, duration) from the extension alone.
 
-Adapters for TypeORM/Drizzle/Sequelize/Mongoose follow the same pattern: implement `DebugPlugin` and call `recorder.recordSql(...)` — see the extension guide.
+Using an ORM not listed above? Implement `DebugPlugin` and call `recorder.recordSql(...)` from any query hook your ORM exposes — see the extension guide.
 
 ## Redis profiling
 
@@ -164,9 +220,9 @@ Content-negotiated — browsers get HTML, everything else JSON:
 
 | Route | Method | Description |
 | --- | --- | --- |
-| `/nest-debug-panel` | GET | Request list (JSON summaries or HTML dashboard) |
-| `/nest-debug-panel/:id` | GET | Full profile (JSON or HTML detail page with Timeline/SQL/Redis/HTTP/Exception/Memory/Headers/Body/Response tabs) |
-| `/nest-debug-panel` | DELETE | Clear history |
+| `/__debug` | GET | Request list (JSON summaries or HTML dashboard) |
+| `/__debug/:id` | GET | Full profile (JSON or HTML detail page with Timeline/SQL/Redis/HTTP/Exception/Memory/Headers/Body/Response tabs) |
+| `/__debug` | DELETE | Clear history |
 
 ## Security
 
@@ -190,7 +246,7 @@ DebugModule.forRoot({ storage: new RedisStorage(client) });
 
 ```bash
 npm run example
-# open http://localhost:3000/nest-debug-panel
+# open http://localhost:3000/__debug
 ```
 
 Endpoints demonstrating each feature: `/users`, `/users/:id`, `POST /users` (redaction), `/n-plus-one` (N+1 warning), `/slow` (slow flags), `/external` (fetch capture), `/boom` (exception).
