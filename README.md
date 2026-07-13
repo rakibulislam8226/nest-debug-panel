@@ -305,7 +305,7 @@ DebugModule.forRoot()
  └─ DebugController                JSON API + server-rendered dashboard
 ```
 
-No global mutable state; every request gets an isolated context. Express and Fastify are both supported (the interceptor only relies on common request fields).
+No global mutable state; every request gets an isolated context. **Express and Fastify are both supported and covered by the integration test suite** — the interceptor only relies on request fields common to both adapters, so no configuration differs between them.
 
 ## License
 
