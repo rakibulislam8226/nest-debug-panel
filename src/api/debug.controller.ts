@@ -29,9 +29,9 @@ interface TypedResponse {
 
 /**
  * Debug API + UI. Content-negotiated:
- *   GET    /__debug      → HTML dashboard (browser) or JSON summaries (Accept: application/json)
- *   GET    /__debug/:id  → HTML detail page or full JSON profile
- *   DELETE /__debug      → clear history
+ *   GET    /nest-debug-panel      → HTML dashboard (browser) or JSON summaries (Accept: application/json)
+ *   GET    /nest-debug-panel/:id  → HTML detail page or full JSON profile
+ *   DELETE /nest-debug-panel      → clear history
  *
  * The path is re-prefixed at bootstrap from `routePrefix`; the controller
  * itself is excluded from profiling.
@@ -52,8 +52,13 @@ export class DebugController {
   ): Promise<string | RequestSummary[]> {
     const summaries = await this.storage.list();
     if (wantsHtml(request)) {
-      setHtml(response);
-      return renderListPage(summaries, this.options.routePrefix);
+      try {
+        const html = renderListPage(summaries, this.options.routePrefix);
+        setHtml(response);
+        return html;
+      } catch {
+        /* rendering failed — fall back to JSON below */
+      }
     }
     return summaries;
   }
@@ -67,8 +72,13 @@ export class DebugController {
     const profile = await this.storage.find(id);
     if (!profile) throw new NotFoundException(`No captured request with id "${id}"`);
     if (wantsHtml(request)) {
-      setHtml(response);
-      return renderDetailPage(profile, this.options.routePrefix, this.options.slowQueryThreshold);
+      try {
+        const html = renderDetailPage(profile, this.options.routePrefix, this.options.slowQueryThreshold);
+        setHtml(response);
+        return html;
+      } catch {
+        /* rendering failed — fall back to JSON below */
+      }
     }
     return profile;
   }

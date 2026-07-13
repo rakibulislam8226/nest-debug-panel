@@ -65,7 +65,7 @@ export class PrismaPlugin implements DebugPlugin {
   extension(): { name: string; query: { $allOperations: (args: PrismaOperationArgs) => Promise<unknown> } } {
     const plugin = this;
     return {
-      name: 'nest-lens-prisma',
+      name: 'nest-debug-panel-prisma',
       query: {
         $allOperations({ model, operation, args, query }: PrismaOperationArgs): Promise<unknown> {
           const recorder = plugin.context?.recorder;

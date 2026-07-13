@@ -28,7 +28,7 @@ export interface DebugModuleOptions {
   slowRequestThreshold?: number;
   /** A duplicated SELECT repeated this many times is flagged as possible N+1. Default 5. */
   nPlusOneThreshold?: number;
-  /** Where the debug API + UI are mounted. Default `/__debug`. */
+  /** Where the debug API + UI are mounted. Default `/nest-debug-panel`. */
   routePrefix?: string;
   /**
    * Requests to skip. Strings match by path prefix (`/health`), support `*`

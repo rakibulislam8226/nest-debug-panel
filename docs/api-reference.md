@@ -1,6 +1,6 @@
 # API reference
 
-Everything below is exported from `@nest-lens/core`.
+Everything below is exported from `nest-debug-panel`.
 
 ## Module
 
@@ -18,7 +18,7 @@ DebugModule.forRootAsync({
     enabled: config.get('DEBUG_ENABLED') === 'true',
     maxRequests: 500,
   }),
-  routePrefix: '/__debug', // must be static in async mode
+  routePrefix: '/nest-debug-panel', // must be static in async mode
 });
 ```
 

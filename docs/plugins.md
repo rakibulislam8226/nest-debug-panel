@@ -1,11 +1,11 @@
 # Plugin development & extension guide
 
-Everything in nest-lens that touches an external system is a plugin. The core knows nothing about Prisma, Redis, or Axios — it only knows the `DebugPlugin` contract and the `DebugRecorder` API.
+Everything in nest-debug-panel that touches an external system is a plugin. The core knows nothing about Prisma, Redis, or Axios — it only knows the `DebugPlugin` contract and the `DebugRecorder` API.
 
 ## The contract
 
 ```ts
-import { DebugPlugin, DebugPluginContext, RequestProfile } from '@nest-lens/core';
+import { DebugPlugin, DebugPluginContext, RequestProfile } from 'nest-debug-panel';
 
 export class MyPlugin implements DebugPlugin {
   readonly name = 'my-plugin';
@@ -66,7 +66,7 @@ Look at `PrismaPlugin` for the full pattern: its client extension runs *inside* 
 ## Worked example: a BullMQ plugin
 
 ```ts
-import { DebugPlugin, DebugPluginContext } from '@nest-lens/core';
+import { DebugPlugin, DebugPluginContext } from 'nest-debug-panel';
 import { performance } from 'node:perf_hooks';
 
 export class BullMqPlugin implements DebugPlugin {
@@ -120,7 +120,7 @@ If the hook runs inside the request's async chain (most do), you don't need corr
 ## Custom storage drivers
 
 ```ts
-import { DebugStorage, RequestProfile, RequestSummary, toRequestSummary } from '@nest-lens/core';
+import { DebugStorage, RequestProfile, RequestSummary, toRequestSummary } from 'nest-debug-panel';
 
 export class FileStorage implements DebugStorage {
   async save(profile: RequestProfile) { /* append JSON line, rotate at maxRequests */ }
@@ -130,7 +130,7 @@ export class FileStorage implements DebugStorage {
   async count() { /* ... */ }
 }
 
-DebugModule.forRoot({ storage: new FileStorage('./.nest-lens') });
+DebugModule.forRoot({ storage: new FileStorage('./.nest-debug-panel') });
 ```
 
 Methods may be sync or async. `list()` must return newest-first and should stay cheap — it backs the dashboard's 2-second polling.

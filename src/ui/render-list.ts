@@ -82,5 +82,5 @@ export function renderListPage(summaries: RequestSummary[], routePrefix: string)
     <button class="btn" onclick="toggleAuto(this)">Auto-refresh: on</button>
     <button class="btn" onclick="refresh()">Refresh</button>
     <button class="btn danger" onclick="clearAll()">Clear</button>`;
-  return layout('nest-lens — requests', body, headerExtra);
+  return layout('nest-debug-panel — requests', body, headerExtra);
 }

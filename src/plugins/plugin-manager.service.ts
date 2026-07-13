@@ -20,7 +20,7 @@ import { MemoryPlugin } from './memory/memory.plugin';
  */
 @Injectable()
 export class PluginManager implements OnModuleInit, OnApplicationShutdown {
-  private readonly logger = new Logger('NestLens');
+  private readonly logger = new Logger('NestDebugPanel');
   private plugins: DebugPlugin[] = [];
 
   constructor(

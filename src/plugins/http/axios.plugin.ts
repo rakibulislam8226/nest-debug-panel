@@ -3,7 +3,7 @@ import type { DebugPlugin, DebugPluginContext } from '../../interfaces/plugin.in
 import type { DebugRecorder } from '../../interfaces/recorder.interface';
 import { byteSize } from '../../utils/common';
 
-const MARKER = '__nestLensTiming';
+const MARKER = '__nestDebugPanelTiming';
 
 interface AxiosConfigLike {
   url?: string;
@@ -30,7 +30,7 @@ export interface AxiosInstanceLike {
   };
 }
 
-const INSTRUMENTED = Symbol('nest-lens:axios-instrumented');
+const INSTRUMENTED = Symbol('nest-debug-panel:axios-instrumented');
 
 /**
  * Time every request going through an Axios instance. For Nest's HttpService,

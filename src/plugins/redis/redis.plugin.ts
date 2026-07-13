@@ -3,7 +3,7 @@ import type { DebugPlugin, DebugPluginContext } from '../../interfaces/plugin.in
 import type { DebugRecorder } from '../../interfaces/recorder.interface';
 import { formatArgs } from '../../utils/common';
 
-const INSTRUMENTED = Symbol('nest-lens:redis-instrumented');
+const INSTRUMENTED = Symbol('nest-debug-panel:redis-instrumented');
 
 interface RedisClientLike {
   sendCommand: (...args: unknown[]) => unknown;

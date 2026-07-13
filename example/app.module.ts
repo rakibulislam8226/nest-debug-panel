@@ -11,7 +11,7 @@ import { FakeDatabaseService } from './fake-database.service';
       captureResponseBody: true,
       slowQueryThreshold: 100,
       slowRequestThreshold: 150,
-      routePrefix: '/__debug',
+      routePrefix: '/nest-debug-panel',
       ignore: ['/favicon.ico'],
       plugins: [
         new FetchPlugin(),

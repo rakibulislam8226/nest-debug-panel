@@ -35,7 +35,23 @@ export class DebugContextService implements DebugRecorder {
     return this.als.getStore() !== undefined;
   }
 
+  /**
+   * Recorder calls happen inside application code paths (patched clients,
+   * user services). They must never throw — a broken event is dropped.
+   */
+  private safely(record: () => void): void {
+    try {
+      record();
+    } catch {
+      /* drop the event, never break the caller */
+    }
+  }
+
   recordSql(event: SqlEventInput, target?: RequestProfile): void {
+    this.safely(() => this.doRecordSql(event, target));
+  }
+
+  private doRecordSql(event: SqlEventInput, target?: RequestProfile): void {
     if (!this.options.captureSql) return;
     const profile = target ?? this.getProfile();
     if (!profile) return;
@@ -56,6 +72,10 @@ export class DebugContextService implements DebugRecorder {
   }
 
   recordRedis(event: RedisEventInput, target?: RequestProfile): void {
+    this.safely(() => this.doRecordRedis(event, target));
+  }
+
+  private doRecordRedis(event: RedisEventInput, target?: RequestProfile): void {
     if (!this.options.captureRedis) return;
     const profile = target ?? this.getProfile();
     if (!profile) return;
@@ -72,6 +92,10 @@ export class DebugContextService implements DebugRecorder {
   }
 
   recordHttp(event: HttpEventInput, target?: RequestProfile): void {
+    this.safely(() => this.doRecordHttp(event, target));
+  }
+
+  private doRecordHttp(event: HttpEventInput, target?: RequestProfile): void {
     if (!this.options.captureHttp) return;
     const profile = target ?? this.getProfile();
     if (!profile) return;
@@ -98,6 +122,10 @@ export class DebugContextService implements DebugRecorder {
   }
 
   recordException(error: unknown, target?: RequestProfile): void {
+    this.safely(() => this.doRecordException(error, target));
+  }
+
+  private doRecordException(error: unknown, target?: RequestProfile): void {
     const profile = target ?? this.getProfile();
     if (!profile) return;
     const err = error as { name?: string; message?: string; stack?: string; getStatus?: () => number };
@@ -113,16 +141,20 @@ export class DebugContextService implements DebugRecorder {
   }
 
   mark(label: string, durationMs?: number): void {
-    const profile = this.getProfile();
-    if (!profile) return;
-    const startedAt = Date.now() - (durationMs ?? 0);
-    this.pushTimeline(profile, 'custom', label, startedAt, durationMs);
+    this.safely(() => {
+      const profile = this.getProfile();
+      if (!profile) return;
+      const startedAt = Date.now() - (durationMs ?? 0);
+      this.pushTimeline(profile, 'custom', label, startedAt, durationMs);
+    });
   }
 
   setCustom(key: string, value: unknown): void {
-    const profile = this.getProfile();
-    if (!profile) return;
-    profile.custom[key] = value;
+    this.safely(() => {
+      const profile = this.getProfile();
+      if (!profile) return;
+      profile.custom[key] = value;
+    });
   }
 
   private pushTimeline(

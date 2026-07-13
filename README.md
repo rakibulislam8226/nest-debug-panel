@@ -1,4 +1,4 @@
-# nest-lens
+# nest-debug-panel
 
 **Django Silk for NestJS.** A development-time request inspector that captures everything that happens inside every HTTP request — SQL queries, Redis commands, outgoing HTTP calls, exceptions, memory usage, and a full timeline — and shows it in a built-in dashboard.
 
@@ -26,14 +26,14 @@ GET /boom            8ms   500   exception
 ## Install
 
 ```bash
-npm install @nest-lens/core
+npm install nest-debug-panel
 ```
 
 ## Quick start
 
 ```ts
 import { Module } from '@nestjs/common';
-import { DebugModule } from '@nest-lens/core';
+import { DebugModule } from 'nest-debug-panel';
 
 @Module({
   imports: [
@@ -45,7 +45,7 @@ import { DebugModule } from '@nest-lens/core';
 export class AppModule {}
 ```
 
-Open **`http://localhost:3000/__debug`** — every request is now captured.
+Open **`http://localhost:3000/nest-debug-panel`** — every request is now captured.
 
 ## Configuration
 
@@ -65,7 +65,7 @@ DebugModule.forRoot({
   slowQueryThreshold: 100,      // ms — queries at/above are flagged
   slowRequestThreshold: 500,    // ms — requests at/above are flagged
   nPlusOneThreshold: 5,         // repeated SELECTs to trigger the N+1 warning
-  routePrefix: '/__debug',
+  routePrefix: '/nest-debug-panel',
   ignore: ['/health', '/docs*', /^\/webhooks\//],
   redactKeys: ['password', 'secret', 'token', ...],
   redactHeaders: ['authorization', 'cookie', 'set-cookie', 'x-api-key'],
@@ -91,7 +91,7 @@ Nothing database-specific lives in the core — adapters plug in. The Prisma ada
 
 ```ts
 // prisma.plugin.ts — create one shared instance
-import { PrismaPlugin } from '@nest-lens/core';
+import { PrismaPlugin } from 'nest-debug-panel';
 export const prismaPlugin = new PrismaPlugin();
 ```
 
@@ -118,7 +118,7 @@ Adapters for TypeORM/Drizzle/Sequelize/Mongoose follow the same pattern: impleme
 ## Redis profiling
 
 ```ts
-import { RedisPlugin } from '@nest-lens/core';
+import { RedisPlugin } from 'nest-debug-panel';
 export const redisPlugin = new RedisPlugin();
 
 // DebugModule.forRoot({ plugins: [redisPlugin] })
@@ -131,7 +131,7 @@ Every command (`GET`, `SET`, `DEL`, `HSET`, …) is recorded with arguments (tru
 ## HTTP client profiling
 
 ```ts
-import { AxiosPlugin, FetchPlugin } from '@nest-lens/core';
+import { AxiosPlugin, FetchPlugin } from 'nest-debug-panel';
 
 const axiosPlugin = new AxiosPlugin();
 // DebugModule.forRoot({ plugins: [axiosPlugin, new FetchPlugin()] })
@@ -164,9 +164,9 @@ Content-negotiated — browsers get HTML, everything else JSON:
 
 | Route | Method | Description |
 | --- | --- | --- |
-| `/__debug` | GET | Request list (JSON summaries or HTML dashboard) |
-| `/__debug/:id` | GET | Full profile (JSON or HTML detail page with Timeline/SQL/Redis/HTTP/Exception/Memory/Headers/Body/Response tabs) |
-| `/__debug` | DELETE | Clear history |
+| `/nest-debug-panel` | GET | Request list (JSON summaries or HTML dashboard) |
+| `/nest-debug-panel/:id` | GET | Full profile (JSON or HTML detail page with Timeline/SQL/Redis/HTTP/Exception/Memory/Headers/Body/Response tabs) |
+| `/nest-debug-panel` | DELETE | Clear history |
 
 ## Security
 
@@ -190,7 +190,7 @@ DebugModule.forRoot({ storage: new RedisStorage(client) });
 
 ```bash
 npm run example
-# open http://localhost:3000/__debug
+# open http://localhost:3000/nest-debug-panel
 ```
 
 Endpoints demonstrating each feature: `/users`, `/users/:id`, `POST /users` (redaction), `/n-plus-one` (N+1 warning), `/slow` (slow flags), `/external` (fetch capture), `/boom` (exception).

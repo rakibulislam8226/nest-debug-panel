@@ -118,13 +118,13 @@ export function layout(title: string, body: string, headerExtra = ''): string {
 </head>
 <body>
 <header>
-  <div class="logo">nest<span>-lens</span></div>
+  <div class="logo">nest<span>-debug-panel</span></div>
   <div class="sub">request inspector</div>
   <div class="spacer"></div>
   ${headerExtra}
 </header>
 <main>${body}</main>
-<footer>nest-lens — development profiler. Do not enable in production.</footer>
+<footer>nest-debug-panel — development profiler. Do not enable in production.</footer>
 </body>
 </html>`;
 }

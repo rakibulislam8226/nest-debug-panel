@@ -20,13 +20,13 @@ export interface DebugModuleAsyncOptions {
   inject?: Array<string | symbol | (new (...args: never[]) => unknown)>;
   /**
    * Controller routes are registered before async factories run, so the
-   * prefix must be known statically in async mode. Default: `__debug`.
+   * prefix must be known statically in async mode. Default: `nest-debug-panel`.
    */
   routePrefix?: string;
 }
 
 /**
- * nest-lens root module.
+ * nest-debug-panel root module.
  *
  * ```ts
  * @Module({

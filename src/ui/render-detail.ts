@@ -227,5 +227,5 @@ export function renderDetailPage(
     });
   </script>`;
 
-  return layout(`nest-lens — ${profile.method} ${profile.url}`, body);
+  return layout(`nest-debug-panel — ${profile.method} ${profile.url}`, body);
 }
