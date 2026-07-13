@@ -1,6 +1,6 @@
 {
   "name": "nest-debug-panel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Request inspector & profiler for NestJS — Django Silk-style debugging: SQL, Redis, HTTP calls, exceptions, memory and a per-request timeline.",
   "license": "MIT",
   "author": "Rakibul Islam <rakibulislam8226@gmail.com>",
