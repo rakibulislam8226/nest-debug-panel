@@ -23,29 +23,63 @@ GET /boom            8ms   500   exception
 - **Built-in dashboard** — server-rendered, dark, no frontend build step; JSON API for tooling
 - **Safe by default** — disabled in production, sensitive keys/headers redacted, optional `authorize` callback
 
-## Install
+## Installation
+
+### 1. Install the package
 
 ```bash
 npm install nest-debug-panel
+# or
+yarn add nest-debug-panel
+# or
+pnpm add nest-debug-panel
 ```
 
-## Quick start
+Requires Node.js ≥ 18 and NestJS 9, 10, or 11. No other dependencies — ORM/Redis/HTTP adapters are optional and hook into libraries you already have.
+
+### 2. Register the module
+
+Add `DebugModule.forRoot()` to your root module (preferably **first** in the imports list, so its interceptor wraps everything):
 
 ```ts
+// app.module.ts
 import { Module } from '@nestjs/common';
 import { DebugModule } from 'nest-debug-panel';
 
 @Module({
   imports: [
-    DebugModule.forRoot({
-      enabled: process.env.NODE_ENV !== 'production', // this is the default
-    }),
+    DebugModule.forRoot(), // enabled automatically when NODE_ENV !== 'production'
+    // ...your other modules
   ],
 })
 export class AppModule {}
 ```
 
-Open **`http://localhost:3000/__debug`** — every request is now captured.
+That's it — no changes to controllers, services, or business logic.
+
+### 3. Open the dashboard
+
+Start your app as usual and open:
+
+```
+http://localhost:<your-port>/__debug
+```
+
+### 4. Verify it works
+
+Hit any endpoint of your API, then check the dashboard (it auto-refreshes every 2s), or verify from the terminal:
+
+```bash
+curl http://localhost:3000/api/anything            # any request to your app
+curl http://localhost:3000/__debug -H 'accept: application/json'
+# → [{ "method": "GET", "url": "/api/anything", "statusCode": 200, "durationMs": ... }]
+```
+
+If the list is empty, check that `NODE_ENV` is not `production` (or pass `enabled: true` explicitly) and that the route isn't in your `ignore` list.
+
+### 5. (Optional) Add adapters
+
+Request/response/exception/memory/timeline capture works out of the box. To also see **database queries, Redis commands, and outgoing HTTP calls**, wire the adapter for what you use — each is 2–3 lines, see [Database profiling](#database-profiling--works-with-any-orm--database), [Redis profiling](#redis-profiling), and [HTTP client profiling](#http-client-profiling) below.
 
 ## Configuration
 
