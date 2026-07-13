@@ -50,7 +50,6 @@
     "@nestjs/platform-express": "^11.0.0",
     "@nestjs/platform-fastify": "^11.1.28",
     "@nestjs/testing": "^11.0.0",
-    "@types/express": "^5.0.0",
     "@types/jest": "^29.5.0",
     "@types/node": "^22.0.0",
     "@types/supertest": "^6.0.0",
