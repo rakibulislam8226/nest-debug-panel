@@ -8,7 +8,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -27,23 +27,24 @@ jobs:
       - name: Build
         run: npm run build
 
-      # Only publish when package.json holds a version that is not on npm yet.
-      # Regular pushes (docs, refactors) with an unchanged version are skipped
-      # instead of failing with "cannot publish over existing version".
-      - name: Check whether this version is already published
-        id: version
+      # Fully automatic release: if the version in package.json is already on
+      # npm, bump the patch version right here and push the bump back to
+      # master. (Pushes made with GITHUB_TOKEN don't re-trigger workflows, so
+      # this cannot loop; [skip ci] is extra insurance.)
+      - name: Auto-bump version if already published
         run: |
+          NAME=$(node -p "require('./package.json').name")
           LOCAL=$(node -p "require('./package.json').version")
-          PUBLISHED=$(npm view "$(node -p "require('./package.json').name")" version 2>/dev/null || echo "none")
+          PUBLISHED=$(npm view "$NAME" version 2>/dev/null || echo "none")
           echo "local=$LOCAL published=$PUBLISHED"
           if [ "$LOCAL" = "$PUBLISHED" ]; then
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "publish=true" >> "$GITHUB_OUTPUT"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            npm version patch -m "chore: release v%s [skip ci]"
+            git push origin master --follow-tags
           fi
 
       - name: Publish
-        if: steps.version.outputs.publish == 'true'
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
