@@ -1,8 +1,12 @@
 # nest-debug-panel
 
-**Django Silk for NestJS.** A development-time request inspector that captures everything that happens inside every HTTP request — SQL queries, Redis commands, outgoing HTTP calls, exceptions, memory usage, and a full timeline — and shows it in a built-in dashboard.
+[![npm version](https://img.shields.io/npm/v/nest-debug-panel)](https://www.npmjs.com/package/nest-debug-panel)
+[![license](https://img.shields.io/npm/l/nest-debug-panel)](LICENSE)
+[![node](https://img.shields.io/node/v/nest-debug-panel)](package.json)
 
-Inspired by [Django Silk](https://github.com/jazzband/django-silk), [Django Debug Toolbar](https://github.com/jazzband/django-debug-toolbar), and [Laravel Telescope](https://laravel.com/docs/telescope), built with NestJS idioms: a global interceptor, `AsyncLocalStorage` request contexts, dependency injection, and a plugin architecture.
+**The debug panel for NestJS** — a development-time request inspector and profiler. See everything that happens inside every HTTP request of your NestJS application: SQL queries, Redis commands, outgoing HTTP calls, exceptions, memory usage, and a full execution timeline — in a built-in dashboard at `/__debug`.
+
+One module import. Zero changes to your business logic. Built the NestJS way: a global interceptor, `AsyncLocalStorage` request contexts, dependency injection, and a plugin architecture.
 
 ```
 GET /users          32ms   200   5 SQL queries
@@ -134,7 +138,7 @@ DebugModule.forRoot({
 
 ## Database profiling — works with any ORM / database
 
-Like Django Silk works with MySQL, Postgres or anything Django supports, nothing database-specific lives in the core. Adapters ship for the major ORMs — and because they hook the ORM (not the database), they work with whatever database sits underneath (Postgres, MySQL, SQLite, SQL Server, Mongo, ...):
+Nothing database-specific lives in the core. Adapters ship for every major ORM — and because they hook the ORM rather than the database driver, they work with whatever database sits underneath (PostgreSQL, MySQL, SQLite, SQL Server, MongoDB, ...):
 
 | ORM / query builder | Adapter | Raw SQL | Timing |
 | --- | --- | --- | --- |
