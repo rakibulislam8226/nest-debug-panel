@@ -9,7 +9,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # needed only to push the release tag
     steps:
       - uses: actions/checkout@v4
 
@@ -28,30 +28,40 @@ jobs:
       - name: Build
         run: npm run build
 
-      # Fully automatic release: if the version in package.json is already on
-      # npm, bump the patch version right here and push the bump back to
-      # master. (Pushes made with GITHUB_TOKEN don't re-trigger workflows, so
-      # this cannot loop; [skip ci] is extra insurance.)
-      - name: Auto-bump version if already published
+      # Master is a protected branch, so the workflow never commits or pushes
+      # to it. The release version is derived from the npm registry instead:
+      # if package.json already holds a NEW version (manual bump in a PR),
+      # that wins; otherwise the published patch version is incremented. The
+      # bump happens only inside this runner.
+      - name: Resolve release version
+        id: version
         run: |
           NAME=$(node -p "require('./package.json').name")
           LOCAL=$(node -p "require('./package.json').version")
           PUBLISHED=$(npm view "$NAME" version 2>/dev/null || echo "none")
-          echo "local=$LOCAL published=$PUBLISHED"
-          if [ "$LOCAL" = "$PUBLISHED" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            # Sync with master first — re-runs and racing pushes otherwise
-            # operate on a stale checkout and get rejected.
-            git pull --rebase origin master
-            RESYNCED=$(node -p "require('./package.json').version")
-            if [ "$RESYNCED" = "$PUBLISHED" ]; then
-              npm version patch -m "release v%s [skip ci]"
-              git push origin master --follow-tags
-            fi
-          fi
+          NEXT=$(node -e "
+            const local = '$LOCAL';
+            const pub = '$PUBLISHED';
+            const cmp = (a, b) => {
+              const A = a.split('.').map(Number), B = b.split('.').map(Number);
+              for (let i = 0; i < 3; i++) { if ((A[i] || 0) !== (B[i] || 0)) return (A[i] || 0) - (B[i] || 0); }
+              return 0;
+            };
+            if (pub === 'none' || cmp(local, pub) > 0) { console.log(local); }
+            else { const p = pub.split('.').map(Number); p[2] += 1; console.log(p.join('.')); }
+          ")
+          echo "local=$LOCAL published=$PUBLISHED releasing=$NEXT"
+          npm version "$NEXT" --no-git-tag-version --allow-same-version
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
 
       - name: Publish
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Tag pushes are allowed on protected branches, so releases stay
+      # traceable in git even though no commit lands on master.
+      - name: Tag release
+        run: |
+          git tag "v${{ steps.version.outputs.next }}" || exit 0
+          git push origin "v${{ steps.version.outputs.next }}" || true
