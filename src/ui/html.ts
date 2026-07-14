@@ -48,10 +48,7 @@ export const BASE_STYLES = `
   }
   body { background: var(--bg); color: var(--text); font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif; min-height: 100vh; }
   a { color: var(--accent); text-decoration: none; }
-  header { display: flex; align-items: center; gap: 12px; padding: 14px 24px; background: var(--panel); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
-  header .logo { font-weight: 700; font-size: 16px; }
-  header .logo span { color: var(--accent); }
-  header .sub { color: var(--muted); font-size: 12px; }
+  header { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
   header .spacer { flex: 1; }
   main { max-width: 1200px; margin: 0 auto; padding: 24px; }
   .btn { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
@@ -104,8 +101,42 @@ export const BASE_STYLES = `
   .kv { width: auto; min-width: 50%; }
   .kv td:first-child { color: var(--muted); white-space: nowrap; padding-right: 24px; }
   .empty { text-align: center; color: var(--muted); padding: 48px 0; }
-  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px; }
+  header { padding: 0 24px; height: 56px; backdrop-filter: blur(8px); background: rgba(22,27,34,0.92); }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+  .brand-mark { flex: none; display: block; }
+  .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+  .brand-name { font-size: 14px; font-weight: 600; letter-spacing: 0.01em; color: var(--text); }
+  .brand-name b { color: #ff5277; font-weight: 600; }
+  .brand-sub { font-size: 10.5px; color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; }
+  footer { border-top: 1px solid var(--border); margin-top: 40px; padding: 20px 24px 28px; display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+  footer .made-by { display: inline-flex; align-items: center; gap: 6px; }
+  footer a { color: var(--text); font-weight: 600; text-decoration: none; border-bottom: 1px solid var(--border); padding-bottom: 1px; }
+  footer a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+  footer .gh { vertical-align: -2px; fill: currentColor; }
 `;
+
+/** Pulse-ring mark, reused as favicon (data URI) and header logo. */
+function brandMark(size: number): string {
+  return `<svg class="brand-mark" width="${size}" height="${size}" viewBox="0 0 64 64" aria-hidden="true">
+    <rect width="64" height="64" rx="14" fill="#161b22"/>
+    <rect x="1.5" y="1.5" width="61" height="61" rx="12.5" fill="none" stroke="#2d333b" stroke-width="3"/>
+    <circle cx="32" cy="32" r="17" fill="none" stroke="#e0234e" stroke-width="5"/>
+    <path d="M13 32h9l4-9 9 18 4-9h12" fill="none" stroke="#58a6ff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+}
+
+const FAVICON =
+  'data:image/svg+xml,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">' +
+      '<rect width="64" height="64" rx="14" fill="#0d1117"/>' +
+      '<circle cx="32" cy="32" r="17" fill="none" stroke="#e0234e" stroke-width="6"/>' +
+      '<path d="M13 32h9l4-9 9 18 4-9h12" fill="none" stroke="#58a6ff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '</svg>',
+  );
+
+const GITHUB_ICON =
+  '<svg class="gh" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>';
 
 export function layout(title: string, body: string, headerExtra = ''): string {
   return `<!DOCTYPE html>
@@ -114,17 +145,28 @@ export function layout(title: string, body: string, headerExtra = ''): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
+<link rel="icon" type="image/svg+xml" href="${FAVICON}">
 <style>${BASE_STYLES}</style>
 </head>
 <body>
 <header>
-  <div class="logo">nest<span>-debug-panel</span></div>
-  <div class="sub">request inspector</div>
+  <div class="brand">
+    ${brandMark(30)}
+    <div class="brand-text">
+      <span class="brand-name">Nest <b>Debug Panel</b></span>
+      <span class="brand-sub">Request Profiler</span>
+    </div>
+  </div>
   <div class="spacer"></div>
   ${headerExtra}
 </header>
 <main>${body}</main>
-<footer>nest-debug-panel — development profiler. Do not enable in production.</footer>
+<footer>
+  <div class="made-by">Crafted by
+    <a href="https://github.com/rakibulislam8226" target="_blank" rel="noopener noreferrer">${GITHUB_ICON} Rakibul Islam</a>
+  </div>
+  <div>Development profiler — keep disabled in production.</div>
+</footer>
 </body>
 </html>`;
 }
