@@ -108,11 +108,18 @@ export const BASE_STYLES = `
   .brand-name { font-size: 14px; font-weight: 600; letter-spacing: 0.01em; color: var(--text); }
   .brand-name b { color: #ff5277; font-weight: 600; }
   .brand-sub { font-size: 10.5px; color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; }
-  footer { border-top: 1px solid var(--border); margin-top: 40px; padding: 20px 24px 28px; display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
-  footer .made-by { display: inline-flex; align-items: center; gap: 6px; }
-  footer a { color: var(--text); font-weight: 600; text-decoration: none; border-bottom: 1px solid var(--border); padding-bottom: 1px; }
-  footer a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+  footer { border-top: 1px solid var(--border); margin-top: 40px; padding: 18px 24px; text-align: center; color: var(--muted); font-size: 12px; }
+  footer a { color: var(--text); font-weight: 600; text-decoration: none; }
+  footer a:hover { color: var(--accent); }
   footer .gh { vertical-align: -2px; fill: currentColor; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(1,4,9,0.6); display: none; align-items: center; justify-content: center; z-index: 100; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 22px 24px; width: 360px; max-width: calc(100vw - 32px); box-shadow: 0 12px 40px rgba(0,0,0,0.5); }
+  .modal h3 { font-size: 15px; margin-bottom: 6px; }
+  .modal p { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .btn.solid-danger { background: #b62324; border-color: #b62324; color: #fff; }
+  .btn.solid-danger:hover { background: var(--err); border-color: var(--err); color: #fff; }
 `;
 
 /** Pulse-ring mark, reused as favicon (data URI) and header logo. */
@@ -162,10 +169,7 @@ export function layout(title: string, body: string, headerExtra = ''): string {
 </header>
 <main>${body}</main>
 <footer>
-  <div class="made-by">Crafted by
-    <a href="https://github.com/rakibulislam8226" target="_blank" rel="noopener noreferrer">${GITHUB_ICON} Rakibul Islam</a>
-  </div>
-  <div>Development profiler — keep disabled in production.</div>
+  Development profiler · Crafted by <a href="https://github.com/rakibulislam8226" target="_blank" rel="noopener noreferrer">${GITHUB_ICON} Rakibul Islam</a>
 </footer>
 </body>
 </html>`;
