@@ -16,6 +16,14 @@ export interface DebugModuleOptions {
   captureHeaders?: boolean;
   /** Capture heap/RSS snapshots + event-loop delay. Default true. */
   captureMemory?: boolean;
+  /**
+   * Scan the app's providers at bootstrap and automatically instrument
+   * anything that looks like a PrismaClient, Redis client (ioredis /
+   * node-redis), TypeORM DataSource, or Axios/HttpService — no manual
+   * `plugin.attach()` calls needed. Explicit plugins still take precedence
+   * (instrumentation is idempotent). Default true.
+   */
+  autoInstrument?: boolean;
   /** Accept SQL events from database adapters. Default true. */
   captureSql?: boolean;
   /** Accept Redis events. Default true. */
@@ -59,6 +67,7 @@ export interface ResolvedDebugOptions {
   captureResponseBody: boolean;
   captureHeaders: boolean;
   captureMemory: boolean;
+  autoInstrument: boolean;
   captureSql: boolean;
   captureRedis: boolean;
   captureHttp: boolean;
@@ -98,6 +107,7 @@ export function resolveDebugOptions(options: DebugModuleOptions = {}): ResolvedD
     captureResponseBody: options.captureResponseBody ?? true,
     captureHeaders: options.captureHeaders ?? true,
     captureMemory: options.captureMemory ?? true,
+    autoInstrument: options.autoInstrument ?? true,
     captureSql: options.captureSql ?? true,
     captureRedis: options.captureRedis ?? true,
     captureHttp: options.captureHttp ?? true,

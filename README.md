@@ -77,9 +77,22 @@ curl http://localhost:3000/__debug -H 'accept: application/json'
 
 If the list is empty, check that `NODE_ENV` is not `production` (or pass `enabled: true` explicitly) and that the route isn't in your `ignore` list.
 
-### 5. (Optional) Add adapters
+### 5. Database / Redis / HTTP capture — automatic for most stacks
 
-Request/response/exception/memory/timeline capture works out of the box. To also see **database queries, Redis commands, and outgoing HTTP calls**, wire the adapter for what you use — each is 2–3 lines, see [Database profiling](#database-profiling--works-with-any-orm--database), [Redis profiling](#redis-profiling), and [HTTP client profiling](#http-client-profiling) below.
+At bootstrap the panel scans your app's providers and **auto-instruments** anything it recognizes — no wiring needed:
+
+| Detected provider | What you get automatically |
+| --- | --- |
+| `PrismaClient` (or a service extending it) | every operation (`User.findMany`, duration, counts, N+1 detection) |
+| ioredis / node-redis client | every command with args + timing |
+| TypeORM `DataSource` | every SQL statement with params + timing |
+| `HttpService` / axios instance | every outgoing call with status + timing |
+
+Disable with `autoInstrument: false`. Explicit plugin wiring (below) still works and takes precedence — use it for the pieces auto-detection can't reach:
+
+- **Prisma raw SQL text**: Prisma only emits query events when the client is *constructed* with `log: [{ emit: 'event', level: 'query' }]` — add that one line to see actual SQL instead of `User.findMany`.
+- **Mongoose / Drizzle / Knex**: their hooks are constructor-time options, so they need the 2-line explicit setup shown below.
+- Clients created outside Nest's DI container.
 
 ## Configuration
 
