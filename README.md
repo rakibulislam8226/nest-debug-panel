@@ -1,45 +1,38 @@
+<div align="center">
+
 # nest-debug-panel
 
-**Django Silk for NestJS.** A development-time request inspector that captures everything that happens inside every HTTP request — SQL queries, Redis commands, outgoing HTTP calls, exceptions, memory usage, and a full timeline — and shows it in a built-in dashboard.
+**A debug panel for NestJS.** See everything that happens inside every request.
 
-Inspired by [Django Silk](https://github.com/jazzband/django-silk), [Django Debug Toolbar](https://github.com/jazzband/django-debug-toolbar), and [Laravel Telescope](https://laravel.com/docs/telescope), built with NestJS idioms: a global interceptor, `AsyncLocalStorage` request contexts, dependency injection, and a plugin architecture.
+[![npm version](https://img.shields.io/npm/v/nest-debug-panel)](https://www.npmjs.com/package/nest-debug-panel)
+[![license](https://img.shields.io/npm/l/nest-debug-panel)](LICENSE)
+[![node](https://img.shields.io/node/v/nest-debug-panel)](package.json)
+
+</div>
+
+---
+
+You hit an endpoint and it takes 800ms. Was it the database? A cache miss? That one external API call? Instead of sprinkling `console.log` everywhere, open `/__debug` and look:
 
 ```
-GET /users          32ms   200   5 SQL queries
-GET /orders/42     181ms   200   1 SQL query · slow
-GET /boom            8ms   500   exception
+GET  /users          32ms   200   5 SQL queries
+GET  /orders/42     181ms   200   1 SQL query · slow
+GET  /boom            8ms   500   exception
 ```
 
-## Features
+Click any request and you get the full story: every SQL query with timing, Redis commands, outgoing HTTP calls, the exception with its stack trace, memory usage, and a timeline of the whole request from start to finish.
 
-- **Zero changes to business logic** — one module import and everything is captured automatically
-- **Request profiling** — method, URL, params, headers (redacted), body, user, IP, status, response body/size, duration
-- **Database profiling** — database-agnostic, adapter-based: **Prisma, TypeORM, Sequelize, Mongoose, Knex/Objection, Drizzle** (any underlying DB — Postgres, MySQL, SQLite, Mongo, ...): raw SQL, params, duration, total SQL time, slowest query, duplicate queries, **N+1 detection**
-- **Redis profiling** — every command with arguments and timing (ioredis & node-redis)
-- **HTTP client profiling** — Axios, `fetch`, Nest `HttpService`
-- **Exception tracking** — name, message, stack trace, status, time-to-failure
-- **Memory profiling** — heap/RSS deltas per request, event-loop delay
-- **Timeline** — chronological view of everything inside the request, plus custom marks
-- **Built-in dashboard** — server-rendered, dark, no frontend build step; JSON API for tooling
-- **Safe by default** — disabled in production, sensitive keys/headers redacted, optional `authorize` callback
+One module import. No changes to your business logic. Disabled in production by default.
 
-## Installation
+## Quick start
 
-### 1. Install the package
+Install it:
 
 ```bash
 npm install nest-debug-panel
-# or
-yarn add nest-debug-panel
-# or
-pnpm add nest-debug-panel
 ```
 
-Requires Node.js ≥ 18 and NestJS 9, 10, or 11. No other dependencies — ORM/Redis/HTTP adapters are optional and hook into libraries you already have.
-
-### 2. Register the module
-
-Add `DebugModule.forRoot()` to your root module (preferably **first** in the imports list, so its interceptor wraps everything):
+Register it in your root module, ideally first in the list so its interceptor wraps everything:
 
 ```ts
 // app.module.ts
@@ -48,47 +41,61 @@ import { DebugModule } from 'nest-debug-panel';
 
 @Module({
   imports: [
-    DebugModule.forRoot(), // enabled automatically when NODE_ENV !== 'production'
+    DebugModule.forRoot(), // on when NODE_ENV !== 'production'
     // ...your other modules
   ],
 })
 export class AppModule {}
 ```
 
-That's it — no changes to controllers, services, or business logic.
-
-### 3. Open the dashboard
-
-Start your app as usual and open:
+Start your app and open:
 
 ```
 http://localhost:<your-port>/__debug
 ```
 
-### 4. Verify it works
+That's it. Hit any endpoint of your API and watch it appear in the dashboard (it refreshes every 2 seconds). If the list stays empty, make sure `NODE_ENV` isn't `production`, or pass `enabled: true` explicitly.
 
-Hit any endpoint of your API, then check the dashboard (it auto-refreshes every 2s), or verify from the terminal:
+Works with Node.js 18+, NestJS 9/10/11, and both Express and Fastify. No runtime dependencies.
 
-```bash
-curl http://localhost:3000/api/anything            # any request to your app
-curl http://localhost:3000/__debug -H 'accept: application/json'
-# → [{ "method": "GET", "url": "/api/anything", "statusCode": 200, "durationMs": ... }]
-```
+## What gets captured
 
-If the list is empty, check that `NODE_ENV` is not `production` (or pass `enabled: true` explicitly) and that the route isn't in your `ignore` list.
+For every request: method, URL, query and route params, headers (sensitive ones redacted), body, the authenticated user, IP, response status, response body and size, and total duration.
 
-### 5. (Optional) Add adapters
+On top of that:
 
-Request/response/exception/memory/timeline capture works out of the box. To also see **database queries, Redis commands, and outgoing HTTP calls**, wire the adapter for what you use — each is 2–3 lines, see [Database profiling](#database-profiling--works-with-any-orm--database), [Redis profiling](#redis-profiling), and [HTTP client profiling](#http-client-profiling) below.
+- **Database queries** with SQL text, parameters, and per-query timing, plus total SQL time, the slowest query, duplicate-query groups, and **N+1 detection**
+- **Redis commands** with arguments and timing (ioredis and node-redis)
+- **Outgoing HTTP calls** through Axios, `fetch`, or Nest's `HttpService`
+- **Exceptions** with name, message, stack trace, and how long the request ran before failing
+- **Memory**: heap and RSS deltas per request, event-loop delay
+- **A timeline** that lays all of the above in order, plus your own custom marks
+
+## Database, Redis and HTTP capture is automatic
+
+At startup the panel scans your app's providers and instruments what it recognizes. In most projects you install the package and queries just show up:
+
+| It finds | You get |
+| --- | --- |
+| `PrismaClient` (or a service extending it) | every operation with timing, counts, N+1 detection |
+| ioredis / node-redis client | every command with args and timing |
+| TypeORM `DataSource` | every SQL statement with params and timing |
+| `HttpService` / axios instance | every outgoing call with status and timing |
+
+You can turn this off with `autoInstrument: false`. A few things still need one line of manual setup, simply because they're constructor options in the library itself:
+
+- **Prisma raw SQL text.** Prisma only emits query events if the client is created with `log: [{ emit: 'event', level: 'query' }]`. Without it you'll see `User.findMany (12ms)` instead of the actual SQL. Both are useful; the raw SQL is better.
+- **Mongoose, Drizzle and Knex** hook in at construction time, so wire them explicitly (two lines each, shown below).
+- Clients created outside Nest's DI container.
 
 ## Configuration
 
-All options with their defaults:
+Everything is optional. These are the defaults:
 
 ```ts
 DebugModule.forRoot({
   enabled: process.env.NODE_ENV !== 'production',
-  maxRequests: 200,             // ring buffer size; oldest profiles evicted
+  maxRequests: 200,             // how many profiles to keep; oldest are evicted
   captureRequestBody: true,
   captureResponseBody: true,
   captureHeaders: true,
@@ -96,44 +103,64 @@ DebugModule.forRoot({
   captureSql: true,
   captureRedis: true,
   captureHttp: true,
-  slowQueryThreshold: 100,      // ms — queries at/above are flagged
-  slowRequestThreshold: 500,    // ms — requests at/above are flagged
-  nPlusOneThreshold: 5,         // repeated SELECTs to trigger the N+1 warning
+  autoInstrument: true,         // scan providers and hook them automatically
+  slowQueryThreshold: 100,      // ms; queries at or above get flagged
+  slowRequestThreshold: 500,    // ms; requests at or above get flagged
+  nPlusOneThreshold: 5,         // repeated SELECTs before the N+1 warning fires
   routePrefix: '/__debug',
   ignore: ['/health', '/docs*', /^\/webhooks\//],
   redactKeys: ['password', 'secret', 'token', ...],
   redactHeaders: ['authorization', 'cookie', 'set-cookie', 'x-api-key'],
   maxBodyLength: 65536,         // bytes kept per captured body
-  getUser: (req) => (req as any).user,       // how to extract the authenticated user
-  authorize: (req) => true,     // gate the dashboard, e.g. admin-only
-  storage: undefined,           // custom DebugStorage driver (default: in-memory)
-  plugins: [],                  // profiling plugins, see below
+  getUser: (req) => (req as any).user,
+  authorize: (req) => true,     // gate the dashboard, e.g. admins only
+  storage: undefined,           // custom storage driver; default is in-memory
+  plugins: [],
 });
 ```
 
-`forRootAsync({ imports, useFactory, inject, routePrefix })` is also available — note `routePrefix` must be static because routes are registered before async factories run.
+`forRootAsync({ imports, useFactory, inject, routePrefix })` works too. Note that `routePrefix` must be static in async mode, because routes are registered before async factories run.
 
-### Excluding routes
+To exclude routes from profiling, use the `ignore` option (`'/health'`, globs like `'/static/*'`, or RegExps) or put `@DebugIgnore()` on a controller or handler. The panel's own routes are always excluded.
 
-- **Options**: `ignore: ['/health', '/static/*', /^\/swagger/]`
-- **Decorator**: `@DebugIgnore()` on any controller class or route handler
-- The debug routes themselves are always excluded.
+## Works with any ORM, any database
 
-## Database profiling — works with any ORM / database
-
-Like Django Silk works with MySQL, Postgres or anything Django supports, nothing database-specific lives in the core. Adapters ship for the major ORMs — and because they hook the ORM (not the database), they work with whatever database sits underneath (Postgres, MySQL, SQLite, SQL Server, Mongo, ...):
+Nothing database-specific lives in the core. Adapters hook the ORM rather than the database driver, so the database underneath doesn't matter: PostgreSQL, MySQL, SQLite, SQL Server, MongoDB, anything.
 
 | ORM / query builder | Adapter | Raw SQL | Timing |
 | --- | --- | --- | --- |
 | Prisma | `PrismaPlugin` | ✅ | ✅ |
 | TypeORM | `TypeOrmPlugin` | ✅ | ✅ |
 | Sequelize | `SequelizePlugin` | ✅ | ✅ |
-| Knex (+ Objection.js, Bookshelf) | `KnexPlugin` | ✅ | ✅ |
-| Mongoose (MongoDB) | `MongoosePlugin` | operations + args | — |
+| Knex (and Objection.js, Bookshelf) | `KnexPlugin` | ✅ | ✅ |
+| Mongoose | `MongoosePlugin` | operations + args | — |
 | Drizzle | `DrizzlePlugin` | ✅ | — |
-| anything else | call `recorder.recordSql(...)` from your own hook — see the [extension guide](docs/plugins.md) | | |
 
-All adapters are fail-open (a broken hook never breaks a query), structurally typed (no dependency on any ORM package), and pass through untouched outside profiled requests.
+Every adapter is fail-open (a broken hook never breaks a query), has zero dependency on the ORM package itself, and costs nothing outside profiled requests.
+
+### Prisma
+
+```ts
+// debug.plugins.ts — one shared instance
+import { PrismaPlugin } from 'nest-debug-panel';
+export const prismaPlugin = new PrismaPlugin();
+```
+
+```ts
+// app.module.ts
+DebugModule.forRoot({ plugins: [prismaPlugin] })
+```
+
+```ts
+// prisma.service.ts
+const client = new PrismaClient({
+  log: [{ emit: 'event', level: 'query' }],   // raw SQL + params + duration
+});
+prismaPlugin.attach(client);
+export const db = client.$extends(prismaPlugin.extension());
+```
+
+Why two steps? Prisma emits raw query events from its engine, outside the request's async context. The extension runs inside it and ties the two together. Skip step one and you still get operation-level events from the extension alone.
 
 ### TypeORM
 
@@ -175,50 +202,21 @@ const drizzlePlugin = new DrizzlePlugin();
 const db = drizzle(pool, { logger: drizzlePlugin.logger() });
 ```
 
-### Prisma
+Using something else? Implement the `DebugPlugin` interface and call `recorder.recordSql(...)` from whatever query hook your ORM exposes. All types are exported from the package root.
 
-The Prisma adapter:
-
-```ts
-// prisma.plugin.ts — create one shared instance
-import { PrismaPlugin } from 'nest-debug-panel';
-export const prismaPlugin = new PrismaPlugin();
-```
-
-```ts
-// app.module.ts
-DebugModule.forRoot({ plugins: [prismaPlugin] })
-```
-
-```ts
-// prisma.service.ts
-const client = new PrismaClient({
-  log: [{ emit: 'event', level: 'query' }],   // enables raw SQL + params + duration
-});
-prismaPlugin.attach(client);                   // 1) raw query events
-export const db = client.$extends(prismaPlugin.extension()); // 2) request attribution + timeline marks
-```
-
-Use `db` for your queries. You get raw SQL, parameters, per-query duration, total SQL time, the slowest query, duplicate-query groups, and N+1 warnings in the SQL tab.
-
-Why both steps? Prisma emits raw `query` events from its engine **outside** the request's async context. The extension runs **inside** it and correlates the two (see `docs/plugins.md` for details). If you skip step 1, you still get ORM-level events (`User.findMany`, duration) from the extension alone.
-
-Using an ORM not listed above? Implement `DebugPlugin` and call `recorder.recordSql(...)` from any query hook your ORM exposes — see the extension guide.
-
-## Redis profiling
+## Redis
 
 ```ts
 import { RedisPlugin } from 'nest-debug-panel';
 export const redisPlugin = new RedisPlugin();
 
 // DebugModule.forRoot({ plugins: [redisPlugin] })
-// wherever you create the client:
-redisPlugin.attach(ioredisClient); // works for ioredis and node-redis v4+
+redisPlugin.attach(ioredisClient); // ioredis and node-redis v4+
 ```
 
-Every command (`GET`, `SET`, `DEL`, `HSET`, …) is recorded with arguments (truncated), duration, and errors.
+Every command (`GET`, `SET`, `DEL`, `HSET`, ...) is recorded with its arguments, duration, and any error.
 
-## HTTP client profiling
+## HTTP clients
 
 ```ts
 import { AxiosPlugin, FetchPlugin } from 'nest-debug-panel';
@@ -226,48 +224,48 @@ import { AxiosPlugin, FetchPlugin } from 'nest-debug-panel';
 const axiosPlugin = new AxiosPlugin();
 // DebugModule.forRoot({ plugins: [axiosPlugin, new FetchPlugin()] })
 
-// Nest HttpService:
-axiosPlugin.attach(this.httpService.axiosRef);
-// Plain axios:
-axiosPlugin.attach(axiosInstance);
-// fetch: FetchPlugin patches globalThis.fetch (restored on shutdown)
+axiosPlugin.attach(this.httpService.axiosRef); // Nest HttpService
+axiosPlugin.attach(axiosInstance);             // or any axios instance
+// FetchPlugin patches globalThis.fetch and restores it on shutdown
 ```
 
 Captured: URL, method, status, duration, request size, response size, errors.
 
-## Custom timeline marks & data
+## Custom timeline marks
 
-Inject `DebugContextService` anywhere:
+Inject `DebugContextService` anywhere and annotate the timeline yourself:
 
 ```ts
 constructor(private readonly debug: DebugContextService) {}
 
 async handle() {
-  this.debug.mark('Cache warm-up', 4.2); // shows on the timeline
-  this.debug.setCustom('tenantId', tenant.id); // stored on the profile
+  this.debug.mark('Cache warm-up', 4.2);        // shows on the timeline
+  this.debug.setCustom('tenantId', tenant.id);  // stored on the profile
 }
 ```
 
-## Debug API
+## The API behind the dashboard
 
-Content-negotiated — browsers get HTML, everything else JSON:
+The dashboard is plain HTML served by the package, but the same routes speak JSON. Browsers get HTML, everything else gets JSON:
 
-| Route | Method | Description |
+| Route | Method | Returns |
 | --- | --- | --- |
-| `/__debug` | GET | Request list (JSON summaries or HTML dashboard) |
-| `/__debug/:id` | GET | Full profile (JSON or HTML detail page with Timeline/SQL/Redis/HTTP/Exception/Memory/Headers/Body/Response tabs) |
-| `/__debug` | DELETE | Clear history |
+| `/__debug` | GET | request list |
+| `/__debug/:id` | GET | full profile with timeline, SQL, Redis, HTTP, exception, memory, headers, body, response |
+| `/__debug` | DELETE | clears history |
+
+Build your own frontend or tooling on top of it if you like.
 
 ## Security
 
-- **Disabled automatically in production** (`NODE_ENV === 'production'`) unless you explicitly set `enabled: true`. When disabled, the interceptor passes requests through untouched and the debug routes return 404.
-- Sensitive body keys and headers are redacted before storage.
-- Use `authorize` to gate the dashboard: `authorize: (req) => req.user?.isAdmin === true`.
-- Profiles live in process memory by default and never leave the machine.
+- Off in production automatically, unless you explicitly set `enabled: true`. When off, the interceptor passes requests straight through and the debug routes return 404.
+- Sensitive body keys and headers are redacted before anything is stored.
+- Gate the dashboard with `authorize: (req) => req.user?.isAdmin === true`.
+- Profiles live in process memory by default and never leave your machine.
 
 ## Storage
 
-The default is an in-memory ring buffer (`maxRequests`, oldest evicted). Provide any `DebugStorage` implementation for Redis/file/database persistence:
+The default store is an in-memory ring buffer that keeps the latest `maxRequests` profiles. Need persistence or sharing across instances? Implement the five-method `DebugStorage` interface and pass it in:
 
 ```ts
 class RedisStorage implements DebugStorage {
@@ -278,35 +276,30 @@ DebugModule.forRoot({ storage: new RedisStorage(client) });
 
 ## Example app
 
+The repo ships a small demo with an endpoint for every feature:
+
 ```bash
 npm run example
 # open http://localhost:3000/__debug
 ```
 
-Endpoints demonstrating each feature: `/users`, `/users/:id`, `POST /users` (redaction), `/n-plus-one` (N+1 warning), `/slow` (slow flags), `/external` (fetch capture), `/boom` (exception).
+Try `/users`, `POST /users` (redaction), `/n-plus-one` (N+1 warning), `/slow` (slow flags), `/external` (fetch capture), and `/boom` (exception).
 
-## Documentation
-
-- [API reference](docs/api-reference.md)
-- [Plugin development & extension guide](docs/plugins.md)
-
-## Architecture
+## How it works
 
 ```
 DebugModule.forRoot()
- ├─ DebugInterceptor (global)      creates a profile per request, runs the
+ ├─ DebugInterceptor (global)      builds a profile per request, runs the
  │                                 handler inside AsyncLocalStorage
- ├─ DebugContextService            the per-request context + recorder API
+ ├─ DebugContextService            per-request context + recorder API
+ ├─ AutoInstrumentService          scans providers, hooks what it recognizes
  ├─ PluginManager                  registers plugins, dispatches lifecycle hooks
- │   ├─ MemoryPlugin (built-in)
- │   ├─ PrismaPlugin / RedisPlugin / AxiosPlugin / FetchPlugin
- │   └─ your plugins (implements DebugPlugin)
- ├─ DebugStorage (MemoryStorage)   pluggable persistence, ring buffer
+ ├─ DebugStorage                   pluggable persistence (ring buffer default)
  └─ DebugController                JSON API + server-rendered dashboard
 ```
 
-No global mutable state; every request gets an isolated context. **Express and Fastify are both supported and covered by the integration test suite** — the interceptor only relies on request fields common to both adapters, so no configuration differs between them.
+No global mutable state; every request gets an isolated context. Express and Fastify are both covered by the integration test suite. And everything is fail-open: if anything inside the panel ever breaks, profiling is skipped for that request and your app keeps running as if the package wasn't there.
 
 ## License
 
-MIT
+MIT © [Rakibul Islam](https://github.com/rakibulislam8226)

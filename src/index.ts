@@ -31,7 +31,8 @@ export {
   PrismaClientLike,
   PrismaQueryEventLike,
 } from './plugins/prisma/prisma.plugin';
-export { TypeOrmPlugin } from './plugins/typeorm/typeorm.plugin';
+export { AutoInstrumentService } from './discovery/auto-instrument.service';
+export { TypeOrmPlugin, instrumentTypeOrmDataSource } from './plugins/typeorm/typeorm.plugin';
 export { SequelizePlugin } from './plugins/sequelize/sequelize.plugin';
 export { MongoosePlugin } from './plugins/mongoose/mongoose.plugin';
 export { DrizzlePlugin, DrizzleLoggerLike } from './plugins/drizzle/drizzle.plugin';

@@ -30,6 +30,16 @@ export function renderListPage(summaries: RequestSummary[], routePrefix: string)
     <thead><tr><th>Method</th><th>URL</th><th>Status</th><th>Duration</th><th>Activity</th><th>Time</th></tr></thead>
     <tbody id="rows">${rows || `<tr><td colspan="6"><div class="empty">No requests captured yet — make a request to your API and refresh.</div></td></tr>`}</tbody>
   </table>
+  <div class="modal-overlay" id="clear-modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="clear-title">
+      <h3 id="clear-title">Clear all requests?</h3>
+      <p>This removes every captured request profile. This cannot be undone.</p>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeClearModal()">Cancel</button>
+        <button class="btn solid-danger" onclick="confirmClear()">Clear all</button>
+      </div>
+    </div>
+  </div>
   <script>
     var PREFIX = '/${esc(routePrefix)}';
     var auto = true;
@@ -70,8 +80,23 @@ export function renderListPage(summaries: RequestSummary[], routePrefix: string)
         .catch(function () {});
     }
     function clearAll() {
-      fetch(PREFIX, { method: 'DELETE' }).then(refresh);
+      document.getElementById('clear-modal').classList.add('open');
     }
+    function closeClearModal() {
+      document.getElementById('clear-modal').classList.remove('open');
+    }
+    function confirmClear() {
+      fetch(PREFIX, { method: 'DELETE' }).then(function () {
+        closeClearModal();
+        refresh();
+      });
+    }
+    document.getElementById('clear-modal').addEventListener('click', function (event) {
+      if (event.target === this) closeClearModal();
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') closeClearModal();
+    });
     function toggleAuto(btn) {
       auto = !auto;
       btn.textContent = auto ? 'Auto-refresh: on' : 'Auto-refresh: off';
