@@ -15,7 +15,7 @@ import { FakeDatabaseService } from './fake-database.service';
       ignore: ['/favicon.ico'],
       plugins: [
         new FetchPlugin(),
-        // Real integrations (see README / docs/plugins.md):
+        // Real integrations (see README):
         //   new PrismaPlugin()  + prismaPlugin.attach(client) + client.$extends(prismaPlugin.extension())
         //   new RedisPlugin()   + redisPlugin.attach(ioredisClient)
         //   new AxiosPlugin()   + axiosPlugin.attach(httpService.axiosRef)

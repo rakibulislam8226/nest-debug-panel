@@ -46,7 +46,7 @@ jobs:
             git pull --rebase origin master
             RESYNCED=$(node -p "require('./package.json').version")
             if [ "$RESYNCED" = "$PUBLISHED" ]; then
-              npm version patch -m "chore: release v%s [skip ci]"
+              npm version patch -m "release v%s [skip ci]"
               git push origin master --follow-tags
             fi
           fi

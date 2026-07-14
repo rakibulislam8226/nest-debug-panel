@@ -37,7 +37,7 @@ npm install nest-debug-panel
 yarn add nest-debug-panel
 # or
 pnpm add nest-debug-panel
-```
+```add local test
 
 Requires Node.js ≥ 18 and NestJS 9, 10, or 11. No other dependencies — ORM/Redis/HTTP adapters are optional and hook into libraries you already have.
 
@@ -148,7 +148,7 @@ Nothing database-specific lives in the core. Adapters ship for every major ORM �
 | Knex (+ Objection.js, Bookshelf) | `KnexPlugin` | ✅ | ✅ |
 | Mongoose (MongoDB) | `MongoosePlugin` | operations + args | — |
 | Drizzle | `DrizzlePlugin` | ✅ | — |
-| anything else | call `recorder.recordSql(...)` from your own hook — see the [extension guide](docs/plugins.md) | | |
+| anything else | implement `DebugPlugin` and call `recorder.recordSql(...)` from your ORM's query hook | | |
 
 All adapters are fail-open (a broken hook never breaks a query), structurally typed (no dependency on any ORM package), and pass through untouched outside profiled requests.
 
@@ -218,9 +218,9 @@ export const db = client.$extends(prismaPlugin.extension()); // 2) request attri
 
 Use `db` for your queries. You get raw SQL, parameters, per-query duration, total SQL time, the slowest query, duplicate-query groups, and N+1 warnings in the SQL tab.
 
-Why both steps? Prisma emits raw `query` events from its engine **outside** the request's async context. The extension runs **inside** it and correlates the two (see `docs/plugins.md` for details). If you skip step 1, you still get ORM-level events (`User.findMany`, duration) from the extension alone.
+Why both steps? Prisma emits raw `query` events from its engine **outside** the request's async context. The extension runs **inside** it and correlates the two. If you skip step 1, you still get ORM-level events (`User.findMany`, duration) from the extension alone.
 
-Using an ORM not listed above? Implement `DebugPlugin` and call `recorder.recordSql(...)` from any query hook your ORM exposes — see the extension guide.
+Using an ORM not listed above? Implement `DebugPlugin` and call `recorder.recordSql(...)` from any query hook your ORM exposes — all types are exported from the package root.
 
 ## Redis profiling
 
@@ -301,11 +301,6 @@ npm run example
 ```
 
 Endpoints demonstrating each feature: `/users`, `/users/:id`, `POST /users` (redaction), `/n-plus-one` (N+1 warning), `/slow` (slow flags), `/external` (fetch capture), `/boom` (exception).
-
-## Documentation
-
-- [API reference](docs/api-reference.md)
-- [Plugin development & extension guide](docs/plugins.md)
 
 ## Architecture
 
