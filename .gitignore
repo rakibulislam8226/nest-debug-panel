@@ -3,3 +3,6 @@ dist/
 coverage/
 *.log
 .env
+
+nest-debug-panel-*.tgz
+# *.tgz

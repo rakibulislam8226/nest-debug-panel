@@ -12,6 +12,7 @@ import { DebugInterceptor } from './interceptor/debug.interceptor';
 import { DebugAccessGuard } from './guards/debug-access.guard';
 import { DebugController } from './api/debug.controller';
 import { PluginManager } from './plugins/plugin-manager.service';
+import { AutoInstrumentService } from './discovery/auto-instrument.service';
 import { MemoryStorage } from './storage/memory.storage';
 
 export interface DebugModuleAsyncOptions {
@@ -81,6 +82,7 @@ export class DebugModule {
         DebugContextService,
         DebugAccessGuard,
         PluginManager,
+        AutoInstrumentService,
         {
           provide: DEBUG_STORAGE,
           useFactory: (resolved: ResolvedDebugOptions) =>
