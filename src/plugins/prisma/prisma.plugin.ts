@@ -77,20 +77,15 @@ const TX_CONTROL = /^\s*(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE\s+SAVEPOINT|DEA
 const RECONNECT_TIMEOUT_MS = 8000;
 
 /** Resolve when `promise` settles or after `ms`, whichever comes first (never rejects on timeout). */
-function withTimeout(promise: Promise<unknown>, ms: number): Promise<unknown> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
+function withTimeout(promise: Promise<unknown>, ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(() => resolve(), ms);
     if (typeof timer.unref === 'function') timer.unref(); // don't keep the process alive
-    promise.then(
-      () => {
-        clearTimeout(timer);
-        resolve(undefined);
-      },
-      () => {
-        clearTimeout(timer);
-        resolve(undefined);
-      },
-    );
+    const done = (): void => {
+      clearTimeout(timer);
+      resolve();
+    };
+    promise.then(done, done);
   });
 }
 
@@ -136,10 +131,15 @@ export class PrismaPlugin implements DebugPlugin {
   /** Clients whose driver adapter was wrapped and now need a reconnect to activate it. */
   private readonly reconnectQueue: ReconnectablePrisma[] = [];
   /**
-   * Per-operation context. Unlike the correlator's stack, an async-local store
-   * follows each operation's own async chain, so concurrent operations
-   * (`Promise.all([findMany, count])`) tag their raw SQL correctly instead of
-   * both resolving to whichever token happens to be on top of the stack.
+   * Per-operation context for the **driver-adapter capture path**. Unlike the
+   * correlator's stack, an async-local store follows each operation's own async
+   * chain, so concurrent operations (`Promise.all([findMany, count])`) tag
+   * their raw SQL correctly instead of both resolving to whichever token is on
+   * top of the stack.
+   *
+   * Note: the query-event capture path (older Prisma / `log` events) emits from
+   * the engine outside this context, so it remains best-effort under
+   * concurrency via {@link PrismaCorrelator}.
    */
   private readonly opContext = new AsyncLocalStorage<{
     profile: RequestProfile;
