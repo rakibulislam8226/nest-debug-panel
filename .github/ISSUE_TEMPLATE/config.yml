@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or discussion
+    url: https://github.com/rakibulislam8226/nest-debug-panel/discussions
+    about: Ask a question or share an idea (enable Discussions on the repo to use this).
+  - name: Security vulnerability
+    url: https://github.com/rakibulislam8226/nest-debug-panel/security/advisories/new
+    about: Report a security issue privately — please do not open a public issue.

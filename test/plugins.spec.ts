@@ -174,6 +174,65 @@ describe('PrismaPlugin', () => {
     expect(profile.sql[1].sql).toContain('UPDATE "users"');
   });
 
+  it('tags concurrent operations correctly and records no phantom fallback row', async () => {
+    // Fake adapter stack whose queryRaw runs whatever SQL the operation implies.
+    const queryable = {
+      queryRaw: jest.fn(async (_q: { sql: string; args?: unknown[] }) => ({ rows: [] })),
+      executeRaw: jest.fn(async (_q: { sql: string; args?: unknown[] }) => 0),
+    };
+    const factory = { connect: jest.fn(async () => queryable) };
+    let live: typeof queryable | undefined;
+    const client = {
+      _engineConfig: { adapter: factory },
+      $connect: jest.fn(async () => {
+        live = (await client._engineConfig.adapter.connect()) as typeof queryable;
+      }),
+      $disconnect: jest.fn(async () => {}),
+      // Stand in for the engine: each operation runs its own SELECT.
+      _request: async (params: { model?: string; action?: string }) =>
+        live!.queryRaw({
+          sql: params.action === 'count' ? 'SELECT COUNT(*) FROM "rides"' : 'SELECT * FROM "rides" LIMIT 2',
+        }),
+    };
+
+    const plugin = new PrismaPlugin();
+    plugin.register(pluginContext);
+    await client.$connect();
+    plugin.instrument(client); // wraps _request (operation context) + the adapter
+    await plugin.flushReconnects();
+
+    const profile = makeProfile('prisma-concurrent');
+    await recorder.run(profile, async () => {
+      // findMany + count concurrently — the paginated-list pattern.
+      await Promise.all([
+        client._request({ model: 'Ride', action: 'findMany' }),
+        client._request({ model: 'Ride', action: 'count' }),
+      ]);
+    });
+
+    expect(profile.sql).toHaveLength(2); // no phantom label-only row
+    const select = profile.sql.find((q) => !q.sql?.includes('COUNT'));
+    const count = profile.sql.find((q) => q.sql?.includes('COUNT'));
+    expect(select?.operation).toBe('findMany'); // tag not swapped under concurrency
+    expect(count?.operation).toBe('count');
+  });
+
+  it('is fail-open when a wrapped client cannot reconnect', async () => {
+    const factory = { connect: jest.fn(async () => ({ queryRaw: async () => ({}) })) };
+    const client = {
+      _engineConfig: { adapter: factory },
+      $connect: jest.fn(async () => {
+        throw new Error('database unreachable');
+      }),
+      $disconnect: jest.fn(async () => {}),
+    };
+    const plugin = new PrismaPlugin();
+    plugin.register(pluginContext);
+    plugin.instrument(client);
+    // Must resolve (never throw) even though $connect rejects — bootstrap is safe.
+    await expect(plugin.flushReconnects()).resolves.toBeUndefined();
+  });
+
   it('detects whether a client will emit raw SQL query events', () => {
     // Prisma 7 shape: logging on → logQueries: true; off → key absent.
     expect(prismaLogsRawQueries({ _engineConfig: { logQueries: true } })).toBe(true);
