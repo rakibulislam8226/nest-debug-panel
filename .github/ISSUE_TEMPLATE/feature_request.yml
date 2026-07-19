@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest an idea, improvement, or new adapter
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The use case or pain point behind the request.
+      placeholder: When profiling X, I can't see ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What you'd like to happen. API sketch or UI idea welcome.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches or workarounds you've thought about.
+    validations:
+      required: false

@@ -1,0 +1,56 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for the report! Please fill in as much as you can — a minimal reproduction helps a lot.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, and what did you expect to happen instead?
+      placeholder: I enabled the panel and ... but I expected ...
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: A minimal reproduction, or the smallest snippet that shows the problem.
+      render: text
+    validations:
+      required: false
+  - type: dropdown
+    id: orm
+    attributes:
+      label: ORM / driver in use
+      multiple: true
+      options:
+        - Prisma
+        - TypeORM
+        - Sequelize
+        - Knex
+        - Drizzle
+        - Mongoose
+        - Redis (ioredis / node-redis)
+        - HTTP (axios / fetch)
+        - None / not relevant
+    validations:
+      required: false
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: nest-debug-panel, @nestjs/* , the ORM/driver, and Node.
+      placeholder: "nest-debug-panel 0.1.x, @nestjs/common 11.x, prisma 7.x, node 20"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / stack trace
+      description: Any relevant console output. This will be rendered as code.
+      render: shell
+    validations:
+      required: false

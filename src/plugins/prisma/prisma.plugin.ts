@@ -1,5 +1,7 @@
 import { performance } from 'node:perf_hooks';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { DebugPlugin, DebugPluginContext } from '../../interfaces/plugin.interface';
+import type { RequestProfile } from '../../interfaces/profile.interface';
 import { PrismaCorrelator } from './prisma-correlator';
 
 /** Shape of Prisma's `query` log event (requires `log: [{ emit: 'event', level: 'query' }]`). */
@@ -71,6 +73,27 @@ interface ReconnectablePrisma {
 /** SQL statements that are pure transaction control — noise in the query list. */
 const TX_CONTROL = /^\s*(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE\s+SAVEPOINT|DEALLOCATE)\b/i;
 
+/** Upper bound on the bootstrap reconnect that activates driver-adapter capture. */
+const RECONNECT_TIMEOUT_MS = 8000;
+
+/** Resolve when `promise` settles or after `ms`, whichever comes first (never rejects on timeout). */
+function withTimeout(promise: Promise<unknown>, ms: number): Promise<unknown> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    if (typeof timer.unref === 'function') timer.unref(); // don't keep the process alive
+    promise.then(
+      () => {
+        clearTimeout(timer);
+        resolve(undefined);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(undefined);
+      },
+    );
+  });
+}
+
 function serializeAdapterArgs(args: unknown[] | undefined): string | undefined {
   if (!args || args.length === 0) return undefined;
   try {
@@ -112,6 +135,19 @@ export class PrismaPlugin implements DebugPlugin {
   private readonly pendingInstrument: unknown[] = [];
   /** Clients whose driver adapter was wrapped and now need a reconnect to activate it. */
   private readonly reconnectQueue: ReconnectablePrisma[] = [];
+  /**
+   * Per-operation context. Unlike the correlator's stack, an async-local store
+   * follows each operation's own async chain, so concurrent operations
+   * (`Promise.all([findMany, count])`) tag their raw SQL correctly instead of
+   * both resolving to whichever token happens to be on top of the stack.
+   */
+  private readonly opContext = new AsyncLocalStorage<{
+    profile: RequestProfile;
+    model?: string;
+    operation?: string;
+    /** Set once this operation's raw SQL is captured, so the fallback stays quiet. */
+    captured?: boolean;
+  }>();
 
   constructor(private readonly pluginOptions: { client?: PrismaClientLike } = {}) {}
 
@@ -157,8 +193,16 @@ export class PrismaPlugin implements DebugPlugin {
   async flushReconnects(): Promise<void> {
     for (const client of this.reconnectQueue.splice(0)) {
       try {
-        await client.$disconnect?.();
-        await client.$connect?.();
+        // Bounded so a slow/unreachable database can never hang bootstrap. If
+        // the reconnect is still in flight when the timeout fires, Prisma will
+        // finish (or lazily reconnect on the next query) through the wrapper.
+        await withTimeout(
+          (async () => {
+            await client.$disconnect?.();
+            await client.$connect?.();
+          })(),
+          RECONNECT_TIMEOUT_MS,
+        );
       } catch {
         /* fail-open: capture may be partial, but the app is unaffected */
       }
@@ -242,8 +286,15 @@ export class PrismaPlugin implements DebugPlugin {
     factory[ADAPTER_WRAPPED] = true;
     const plugin = this;
     const original = factory.connect.bind(factory);
-    factory.connect = async (...args: unknown[]): Promise<AdapterQueryable> =>
-      plugin.wrapQueryable(await original(...args)) as AdapterQueryable;
+    factory.connect = async (...args: unknown[]): Promise<AdapterQueryable> => {
+      const queryable = await original(...args);
+      // Never let instrumentation break the connection itself.
+      try {
+        return plugin.wrapQueryable(queryable) as AdapterQueryable;
+      } catch {
+        return queryable;
+      }
+    };
     return true;
   }
 
@@ -262,14 +313,25 @@ export class PrismaPlugin implements DebugPlugin {
         try {
           return await original(query);
         } finally {
-          plugin.recordAdapterQuery(query, performance.now() - start, startedAt);
+          // Recording must never alter the query's result or throw over it.
+          try {
+            plugin.recordAdapterQuery(query, performance.now() - start, startedAt);
+          } catch {
+            /* fail-open: capture failure is invisible to the caller */
+          }
         }
       };
     }
     if (typeof queryable.startTransaction === 'function') {
       const original = queryable.startTransaction.bind(queryable);
-      queryable.startTransaction = async (...args: unknown[]): Promise<AdapterQueryable> =>
-        plugin.wrapQueryable(await original(...args)) as AdapterQueryable;
+      queryable.startTransaction = async (...args: unknown[]): Promise<AdapterQueryable> => {
+        const tx = await original(...args);
+        try {
+          return plugin.wrapQueryable(tx) as AdapterQueryable;
+        } catch {
+          return tx;
+        }
+      };
     }
     return queryable;
   }
@@ -280,17 +342,18 @@ export class PrismaPlugin implements DebugPlugin {
     if (!recorder) return;
     const sql = query?.sql ?? '';
     if (TX_CONTROL.test(sql)) return; // skip BEGIN/COMMIT/SAVEPOINT noise
-    const token = this.correlator.resolve();
-    const profile = recorder.getProfile() ?? token?.profile;
+    // The async-local operation context identifies the owning operation
+    // accurately, even for concurrent operations. Outside a request there is
+    // no store and no active profile, so background queries are ignored.
+    const op = this.opContext.getStore();
+    const profile = op?.profile ?? recorder.getProfile();
     if (!profile) return;
-    // Tag the raw SQL with the ORM operation that produced it, when known.
-    const owner = token && token.profile === profile ? token : undefined;
-    if (owner) owner.attached += 1;
+    if (op) op.captured = true; // suppress this operation's ORM-level fallback
     recorder.recordSql(
       {
         source: 'prisma',
-        model: owner?.model,
-        operation: owner?.operation,
+        model: op?.model,
+        operation: op?.operation,
         sql,
         params: serializeAdapterArgs(query?.args),
         durationMs,
@@ -310,6 +373,11 @@ export class PrismaPlugin implements DebugPlugin {
     const profile = recorder?.getProfile();
     if (!recorder || !profile) return Promise.resolve(execute());
 
+    const store: { profile: RequestProfile; model?: string; operation?: string; captured?: boolean } = {
+      profile,
+      model,
+      operation,
+    };
     const token = this.correlator.begin(profile, model, operation);
     const start = performance.now();
     const finish = (): void => {
@@ -317,21 +385,26 @@ export class PrismaPlugin implements DebugPlugin {
       this.correlator.end(token);
       const label = [model, operation].filter(Boolean).join('.') || 'operation';
       recorder.mark(`Prisma ${label}`, durationMs);
-      // No raw query events arrived (query logging not enabled) —
-      // record the ORM operation itself so the query still shows up.
-      if (token.attached === 0) {
+      // Synthesize an ORM-level row only when this operation produced no raw
+      // SQL by any means — driver-adapter capture (`store.captured`) or query
+      // log events (`token.attached`). Otherwise it would be a phantom row.
+      if (!store.captured && token.attached === 0) {
         recorder.recordSql({ source: 'prisma', model, operation, sql: label, durationMs }, profile);
       }
     };
-    return Promise.resolve(execute()).then(
-      (result) => {
-        finish();
-        return result;
-      },
-      (error) => {
-        finish();
-        throw error;
-      },
+    // Run the operation inside its own async-local context so any raw SQL it
+    // emits is tagged with this exact model/operation, even under concurrency.
+    return this.opContext.run(store, () =>
+      Promise.resolve(execute()).then(
+        (result) => {
+          finish();
+          return result;
+        },
+        (error) => {
+          finish();
+          throw error;
+        },
+      ),
     );
   }
 

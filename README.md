@@ -300,6 +300,20 @@ DebugModule.forRoot()
 
 No global mutable state; every request gets an isolated context. Express and Fastify are both covered by the integration test suite. And everything is fail-open: if anything inside the panel ever breaks, profiling is skipped for that request and your app keeps running as if the package wasn't there.
 
+## Contributing
+
+Contributions are welcome — bug reports, adapters for other ORMs, docs, or fixes.
+
+```bash
+npm install
+npm test        # Jest suite
+npm run build   # type-check + compile
+```
+
+Open a pull request against `master` with tests for any change in `src/`. Keep new instrumentation fail-open, and use plain commit messages (no `feat:`/`fix:` prefixes).
+
+Full guide: [CONTRIBUTING.md](CONTRIBUTING.md) · [Code of Conduct](CODE_OF_CONDUCT.md) · report a vulnerability via [SECURITY.md](SECURITY.md).
+
 ## License
 
 MIT © [Rakibul Islam](https://github.com/rakibulislam8226)
