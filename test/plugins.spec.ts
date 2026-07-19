@@ -2,7 +2,7 @@ import { DebugContextService } from '../src/context/debug-context.service';
 import { resolveDebugOptions } from '../src/config/debug-options';
 import { MemoryStorage } from '../src/storage/memory.storage';
 import { instrumentRedisClient, RedisPlugin } from '../src/plugins/redis/redis.plugin';
-import { PrismaPlugin } from '../src/plugins/prisma/prisma.plugin';
+import { PrismaPlugin, prismaLogsRawQueries } from '../src/plugins/prisma/prisma.plugin';
 import { instrumentAxios } from '../src/plugins/http/axios.plugin';
 import type { DebugPluginContext } from '../src/interfaces/plugin.interface';
 import type { RequestProfile } from '../src/interfaces/profile.interface';
@@ -113,6 +113,9 @@ describe('PrismaPlugin', () => {
     expect(profile.sql).toHaveLength(1);
     expect(profile.sql[0].sql).toContain('SELECT * FROM "User"');
     expect(profile.sql[0].params).toBe('[1]');
+    // raw SQL is tagged with the ORM operation that produced it (Telescope-style)
+    expect(profile.sql[0].model).toBe('User');
+    expect(profile.sql[0].operation).toBe('findMany');
     // timeline gets both the SQL event and the Prisma operation mark
     expect(profile.timeline.some((event) => event.label.startsWith('Prisma User.findMany'))).toBe(true);
   });
@@ -133,6 +136,53 @@ describe('PrismaPlugin', () => {
     expect(profile.sql).toHaveLength(1);
     expect(profile.sql[0].sql).toBe('Post.create');
     expect(profile.sql[0].operation).toBe('create');
+  });
+
+  it('captures raw SQL from a Prisma 7 driver adapter with no log option', async () => {
+    // Fake driver-adapter stack: factory.connect() → queryable.queryRaw/executeRaw.
+    const queryable = {
+      queryRaw: jest.fn(async (_q: { sql: string; args?: unknown[] }) => ({ rows: [] })),
+      executeRaw: jest.fn(async (_q: { sql: string; args?: unknown[] }) => 1),
+    };
+    const factory = { connect: jest.fn(async () => queryable) };
+    let live: typeof queryable | undefined;
+    const client = {
+      _engineConfig: { adapter: factory },
+      $connect: jest.fn(async () => {
+        live = (await client._engineConfig.adapter.connect()) as typeof queryable;
+      }),
+      $disconnect: jest.fn(async () => {}),
+    };
+
+    const plugin = new PrismaPlugin();
+    plugin.register(pluginContext);
+    await client.$connect(); // onModuleInit — connects before instrumentation
+    plugin.instrument(client); // auto-instrument wraps the factory
+    expect(plugin.hasPendingReconnects()).toBe(true);
+    await plugin.flushReconnects(); // reconnect re-runs connect() through the wrapper
+
+    const profile = makeProfile('prisma-adapter');
+    await recorder.run(profile, async () => {
+      await live!.queryRaw({ sql: 'SELECT * FROM "users" WHERE id = $1', args: [7] });
+      await live!.executeRaw({ sql: 'BEGIN' }); // transaction control — must be ignored
+      await live!.executeRaw({ sql: 'UPDATE "users" SET name = $1 WHERE id = $2', args: ['x', 7] });
+    });
+
+    expect(profile.sql).toHaveLength(2); // SELECT + UPDATE, BEGIN filtered out
+    expect(profile.sql[0].sql).toContain('SELECT * FROM "users"');
+    expect(profile.sql[0].params).toBe('[7]');
+    expect(profile.sql[1].sql).toContain('UPDATE "users"');
+  });
+
+  it('detects whether a client will emit raw SQL query events', () => {
+    // Prisma 7 shape: logging on → logQueries: true; off → key absent.
+    expect(prismaLogsRawQueries({ _engineConfig: { logQueries: true } })).toBe(true);
+    expect(prismaLogsRawQueries({ _engineConfig: {} })).toBe(false);
+    expect(prismaLogsRawQueries({ _engineConfig: { logQueries: false } })).toBe(false);
+    // Unknown/unreadable client shapes stay quiet (never nag falsely).
+    expect(prismaLogsRawQueries({})).toBe(true);
+    expect(prismaLogsRawQueries(undefined)).toBe(true);
+    expect(prismaLogsRawQueries(null)).toBe(true);
   });
 
   it('propagates operation errors', async () => {

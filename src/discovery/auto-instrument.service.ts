@@ -5,7 +5,7 @@ import type { ResolvedDebugOptions } from '../config/debug-options';
 import type { DebugStorage } from '../interfaces/storage.interface';
 import type { DebugPluginContext } from '../interfaces/plugin.interface';
 import { DebugContextService } from '../context/debug-context.service';
-import { PrismaPlugin } from '../plugins/prisma/prisma.plugin';
+import { PrismaPlugin, prismaLogsRawQueries } from '../plugins/prisma/prisma.plugin';
 import { instrumentTypeOrmDataSource } from '../plugins/typeorm/typeorm.plugin';
 import { instrumentRedisClient } from '../plugins/redis/redis.plugin';
 import { instrumentAxios, AxiosInstanceLike } from '../plugins/http/axios.plugin';
@@ -35,7 +35,7 @@ export class AutoInstrumentService implements OnApplicationBootstrap {
     private readonly modulesContainer: ModulesContainer,
   ) {}
 
-  onApplicationBootstrap(): void {
+  async onApplicationBootstrap(): Promise<void> {
     if (!this.options.enabled || !this.options.autoInstrument) return;
 
     const context: DebugPluginContext = {
@@ -65,6 +65,9 @@ export class AutoInstrumentService implements OnApplicationBootstrap {
     if (found.length > 0) {
       this.logger.log(`Auto-instrumented: ${found.join(', ')}`);
     }
+
+    // Activate driver-adapter raw-SQL capture on clients that already connected.
+    if (prisma.hasPendingReconnects()) await prisma.flushReconnects();
   }
 
   private inspect(instance: object, prisma: PrismaPlugin, found: string[]): void {
@@ -75,6 +78,17 @@ export class AutoInstrumentService implements OnApplicationBootstrap {
     if (typeof candidate['$connect'] === 'function' && typeof candidate['$extends'] === 'function') {
       prisma.instrument(instance);
       found.push(`prisma:${name}`);
+      // Raw SQL is captured when a driver adapter is present (Prisma 7+, wrapped
+      // directly) or when query-event logging is on. Only warn when neither
+      // holds — then the panel can show operation names but not the SQL text.
+      const hasAdapter = !!(candidate['_engineConfig'] as { adapter?: unknown } | undefined)?.adapter;
+      if (!hasAdapter && !prismaLogsRawQueries(instance)) {
+        this.logger.warn(
+          `Prisma client "${name}" is not emitting raw SQL. To see the actual queries ` +
+            `(not just operation names), create it with ` +
+            `log: [{ emit: 'event', level: 'query' }].`,
+        );
+      }
       return;
     }
 

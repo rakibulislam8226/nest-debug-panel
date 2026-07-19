@@ -31,6 +31,8 @@ interface PrismaMiddlewareParams {
 const ATTACHED = Symbol.for('nest-debug-panel:prisma-attached');
 /** Marks a client whose operations are already hooked in place. */
 const IN_PLACE = Symbol.for('nest-debug-panel:prisma-in-place');
+/** Marks a driver adapter (factory or queryable) whose query methods are already wrapped. */
+const ADAPTER_WRAPPED = Symbol.for('nest-debug-panel:prisma-adapter-wrapped');
 
 interface InstrumentablePrisma extends PrismaClientLike {
   [ATTACHED]?: boolean;
@@ -39,14 +41,55 @@ interface InstrumentablePrisma extends PrismaClientLike {
   _request?: (params: unknown) => Promise<unknown>;
 }
 
+/** A query as handed to a Prisma driver adapter: raw SQL text plus positional args. */
+interface AdapterQuery {
+  sql?: string;
+  args?: unknown[];
+}
+
+/** The queryable a driver adapter's `connect()` returns (and its transactions). */
+interface AdapterQueryable {
+  queryRaw?: (query: AdapterQuery) => Promise<unknown>;
+  executeRaw?: (query: AdapterQuery) => Promise<unknown>;
+  startTransaction?: (...args: unknown[]) => Promise<AdapterQueryable>;
+  [ADAPTER_WRAPPED]?: boolean;
+}
+
+/** The driver-adapter *factory* passed to `new PrismaClient({ adapter })` (Prisma 7+). */
+interface AdapterFactory {
+  connect: (...args: unknown[]) => Promise<AdapterQueryable>;
+  [ADAPTER_WRAPPED]?: boolean;
+}
+
+/** A Prisma client we can drive a reconnect on to activate driver-adapter capture. */
+interface ReconnectablePrisma {
+  _engineConfig?: { adapter?: AdapterFactory };
+  $connect?: () => Promise<unknown>;
+  $disconnect?: () => Promise<unknown>;
+}
+
+/** SQL statements that are pure transaction control — noise in the query list. */
+const TX_CONTROL = /^\s*(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE\s+SAVEPOINT|DEALLOCATE)\b/i;
+
+function serializeAdapterArgs(args: unknown[] | undefined): string | undefined {
+  if (!args || args.length === 0) return undefined;
+  try {
+    const json = JSON.stringify(args);
+    return json.length > 500 ? `${json.slice(0, 500)}…` : json;
+  } catch {
+    return '[unserializable]';
+  }
+}
+
 /**
  * Prisma adapter. Capture modes, from most to least automatic:
  *
  * 1. `instrument(client)` — hooks the client **in place** (used by
- *    auto-instrumentation): subscribes to raw `query` log events and wraps
- *    the client's operation path via `$use` middleware or the internal
- *    `_request` method, whichever the installed Prisma version exposes.
- *    No `$extends`, no code changes.
+ *    auto-instrumentation), no `log` option or code changes required. Captures
+ *    raw SQL by wrapping the driver adapter (Prisma 7+); on older Prisma it
+ *    subscribes to raw `query` log events instead. Also wraps the operation
+ *    path (`$use` on Prisma ≤5, else the internal `_request`) to tag each
+ *    query with its model/operation and record an ORM-level fallback.
  * 2. `attach(client)` — only subscribes to raw `query` log events. Requires
  *    the client to be created with `log: [{ emit: 'event', level: 'query' }]`.
  * 3. `extension()` — a Prisma client extension (`prisma.$extends(...)`), the
@@ -67,6 +110,8 @@ export class PrismaPlugin implements DebugPlugin {
   private readonly correlator = new PrismaCorrelator();
   private readonly pendingClients: PrismaClientLike[] = [];
   private readonly pendingInstrument: unknown[] = [];
+  /** Clients whose driver adapter was wrapped and now need a reconnect to activate it. */
+  private readonly reconnectQueue: ReconnectablePrisma[] = [];
 
   constructor(private readonly pluginOptions: { client?: PrismaClientLike } = {}) {}
 
@@ -74,7 +119,10 @@ export class PrismaPlugin implements DebugPlugin {
     this.context = context;
     if (this.pluginOptions.client) this.listen(this.pluginOptions.client);
     for (const client of this.pendingClients.splice(0)) this.listen(client);
-    for (const client of this.pendingInstrument.splice(0)) this.hookInPlace(client);
+    for (const client of this.pendingInstrument.splice(0)) {
+      this.hookInPlace(client);
+      this.setupRawCapture(client);
+    }
   }
 
   /** Subscribe to a client's raw `query` log events. Safe to call before or after bootstrap. */
@@ -84,14 +132,42 @@ export class PrismaPlugin implements DebugPlugin {
   }
 
   /**
-   * Fully instrument a client in place: raw query events + operation-level
-   * capture, with zero changes to how the client is created or used.
-   * Falls back gracefully on Prisma versions that expose neither hook.
+   * Fully instrument a client in place, with zero changes to how the client is
+   * created or used. Captures raw SQL by wrapping the driver adapter (Prisma
+   * 7+) when present — no `log` option needed — and otherwise falls back to
+   * raw `query` log events. Also hooks the operation path for model/operation
+   * tagging and a last-resort ORM-level fallback.
    */
   instrument(client: unknown): void {
-    this.attach(client as PrismaClientLike);
-    if (this.context) this.hookInPlace(client);
-    else this.pendingInstrument.push(client);
+    if (this.context) {
+      this.hookInPlace(client);
+      this.setupRawCapture(client);
+    } else {
+      this.pendingInstrument.push(client);
+    }
+  }
+
+  /**
+   * Reconnect every client whose driver adapter we wrapped. A Prisma client
+   * calls `adapter.connect()` exactly once and caches the queryable, so a
+   * client that already connected (e.g. in `onModuleInit`) won't pick up our
+   * wrapper until it reconnects. Safe to run at bootstrap, before traffic.
+   * Fail-open: a client that resists reconnecting just keeps working.
+   */
+  async flushReconnects(): Promise<void> {
+    for (const client of this.reconnectQueue.splice(0)) {
+      try {
+        await client.$disconnect?.();
+        await client.$connect?.();
+      } catch {
+        /* fail-open: capture may be partial, but the app is unaffected */
+      }
+    }
+  }
+
+  /** True if any wrapped client is awaiting a reconnect to activate capture. */
+  hasPendingReconnects(): boolean {
+    return this.reconnectQueue.length > 0;
   }
 
   /** A Prisma client extension that scopes queries to the active request. */
@@ -138,6 +214,92 @@ export class PrismaPlugin implements DebugPlugin {
     }
   }
 
+  /**
+   * Choose the best raw-SQL capture path for a client:
+   *   - Prisma 7+ driver adapter present → wrap it (zero config, most reliable).
+   *   - otherwise → subscribe to raw `query` log events (needs the `log` option).
+   * Only one path is used, so queries are never recorded twice.
+   */
+  private setupRawCapture(client: unknown): void {
+    if (this.instrumentDriverAdapter(client)) {
+      this.reconnectQueue.push(client as ReconnectablePrisma);
+      return;
+    }
+    this.listen(client as PrismaClientLike);
+  }
+
+  /**
+   * Wrap a Prisma driver adapter (Prisma 7+) so every SQL statement it runs is
+   * captured — no `log: [{ emit: 'event', level: 'query' }]` required. The
+   * client holds the adapter *factory* at `_engineConfig.adapter`; its
+   * `connect()` returns the queryable that actually runs `queryRaw` /
+   * `executeRaw`. We wrap `connect()` to wrap each queryable (and its
+   * transactions). Returns true when a factory was wrapped.
+   */
+  private instrumentDriverAdapter(client: unknown): boolean {
+    const factory = (client as ReconnectablePrisma)?._engineConfig?.adapter;
+    if (!factory || typeof factory.connect !== 'function' || factory[ADAPTER_WRAPPED]) return false;
+    factory[ADAPTER_WRAPPED] = true;
+    const plugin = this;
+    const original = factory.connect.bind(factory);
+    factory.connect = async (...args: unknown[]): Promise<AdapterQueryable> =>
+      plugin.wrapQueryable(await original(...args)) as AdapterQueryable;
+    return true;
+  }
+
+  /** Wrap a queryable's `queryRaw`/`executeRaw` (and transactions) to record SQL. Idempotent. */
+  private wrapQueryable(queryable: AdapterQueryable | undefined): AdapterQueryable | undefined {
+    if (!queryable || queryable[ADAPTER_WRAPPED]) return queryable;
+    queryable[ADAPTER_WRAPPED] = true;
+    const plugin = this;
+    for (const method of ['queryRaw', 'executeRaw'] as const) {
+      const fn = queryable[method];
+      if (typeof fn !== 'function') continue;
+      const original = fn.bind(queryable);
+      queryable[method] = async (query: AdapterQuery): Promise<unknown> => {
+        const start = performance.now();
+        const startedAt = Date.now();
+        try {
+          return await original(query);
+        } finally {
+          plugin.recordAdapterQuery(query, performance.now() - start, startedAt);
+        }
+      };
+    }
+    if (typeof queryable.startTransaction === 'function') {
+      const original = queryable.startTransaction.bind(queryable);
+      queryable.startTransaction = async (...args: unknown[]): Promise<AdapterQueryable> =>
+        plugin.wrapQueryable(await original(...args)) as AdapterQueryable;
+    }
+    return queryable;
+  }
+
+  /** Record one adapter-level SQL statement against the active request. */
+  private recordAdapterQuery(query: AdapterQuery, durationMs: number, startedAt: number): void {
+    const recorder = this.context?.recorder;
+    if (!recorder) return;
+    const sql = query?.sql ?? '';
+    if (TX_CONTROL.test(sql)) return; // skip BEGIN/COMMIT/SAVEPOINT noise
+    const token = this.correlator.resolve();
+    const profile = recorder.getProfile() ?? token?.profile;
+    if (!profile) return;
+    // Tag the raw SQL with the ORM operation that produced it, when known.
+    const owner = token && token.profile === profile ? token : undefined;
+    if (owner) owner.attached += 1;
+    recorder.recordSql(
+      {
+        source: 'prisma',
+        model: owner?.model,
+        operation: owner?.operation,
+        sql,
+        params: serializeAdapterArgs(query?.args),
+        durationMs,
+        startedAt,
+      },
+      profile,
+    );
+  }
+
   /** Time one ORM operation, correlate raw SQL events, record a fallback event. */
   private runOperation(
     model: string | undefined,
@@ -148,7 +310,7 @@ export class PrismaPlugin implements DebugPlugin {
     const profile = recorder?.getProfile();
     if (!recorder || !profile) return Promise.resolve(execute());
 
-    const token = this.correlator.begin(profile);
+    const token = this.correlator.begin(profile, model, operation);
     const start = performance.now();
     const finish = (): void => {
       const durationMs = performance.now() - start;
@@ -190,10 +352,16 @@ export class PrismaPlugin implements DebugPlugin {
     const token = this.correlator.resolve();
     const profile = recorder.getProfile() ?? token?.profile;
     if (!profile) return;
-    if (token && token.profile === profile) token.attached += 1;
+    // When the raw event belongs to a known ORM operation, tag it with the
+    // model/operation so the panel shows raw SQL *and* its ORM context
+    // (like Laravel Telescope / Django Silk), not one or the other.
+    const owner = token && token.profile === profile ? token : undefined;
+    if (owner) owner.attached += 1;
     recorder.recordSql(
       {
         source: 'prisma',
+        model: owner?.model,
+        operation: owner?.operation,
         sql: event.query,
         params: event.params,
         durationMs: event.duration,
@@ -201,5 +369,22 @@ export class PrismaPlugin implements DebugPlugin {
       },
       profile,
     );
+  }
+}
+
+/**
+ * Whether a Prisma client will emit raw `query` events — i.e. it was created
+ * with a query-level log (`log: [{ emit: 'event', level: 'query' }]`). Prisma
+ * exposes this as `_engineConfig.logQueries`; reading it is best-effort and
+ * fail-open (unknown shape → assume enabled, so we never nag falsely).
+ */
+export function prismaLogsRawQueries(client: unknown): boolean {
+  try {
+    const config = (client as { _engineConfig?: { logQueries?: unknown } })?._engineConfig;
+    // Unknown internal shape → stay quiet (never nag on a client we can't read).
+    if (!config || typeof config !== 'object') return true;
+    return config.logQueries === true;
+  } catch {
+    return true;
   }
 }
