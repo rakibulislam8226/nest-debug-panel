@@ -101,6 +101,15 @@ export const BASE_STYLES = `
   .kv { width: auto; min-width: 50%; }
   .kv td:first-child { color: var(--muted); white-space: nowrap; padding-right: 24px; }
   .empty { text-align: center; color: var(--muted); padding: 48px 0; }
+  .pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .pager-bottom { border-top: 1px solid var(--border); padding-top: 14px; margin: 16px 0 2px; }
+  .pager-center { display: flex; align-items: center; gap: 12px; }
+  .pager-status { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .pager-nav { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 16px; font-size: 13px; cursor: pointer; }
+  .pager-nav:hover:not(:disabled) { border-color: var(--accent); }
+  .pager-nav:disabled { opacity: 0.4; cursor: default; }
+  .pager-size { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 13px; cursor: pointer; }
+  .pager-size:hover, .pager-size:focus { outline: none; border-color: var(--accent); }
   header { padding: 0 24px; height: 56px; backdrop-filter: blur(8px); background: rgba(22,27,34,0.92); }
   .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
   .brand-mark { flex: none; display: block; }

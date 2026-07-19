@@ -84,7 +84,55 @@ function sqlPanel(profile: RequestProfile, slowQueryThreshold: number): string {
     })
     .join('');
 
-  return `${summary}${alerts}${items}`;
+  // Paginate the query list client-side so a heavy (e.g. N+1) request stays
+  // navigable. All rows are rendered in the DOM — the JSON API and no-JS
+  // fallback still see everything; only the visible window is limited. The
+  // per-page selector re-slices instantly, no round-trip needed.
+  const DEFAULT_PAGE_SIZE = 25;
+  const MIN_PAGE_SIZE = 5;
+  if (profile.sql.length <= MIN_PAGE_SIZE) return `${summary}${alerts}<div id="sql-events">${items}</div>`;
+
+  const sizeOptions = [10, 25, 50, 100]
+    .map((n) => `<option value="${n}"${n === DEFAULT_PAGE_SIZE ? ' selected' : ''}>${n} per page</option>`)
+    .join('');
+  const pager = `<div class="pager pager-bottom">
+    <button class="pager-nav sql-prev" type="button">Previous</button>
+    <div class="pager-center">
+      <span class="pager-status sql-status"></span>
+      <select class="pager-size sql-size" aria-label="Rows per page">${sizeOptions}</select>
+    </div>
+    <button class="pager-nav sql-next" type="button">Next</button>
+  </div>`;
+  const script = `<script>(function () {
+    var size = ${DEFAULT_PAGE_SIZE}, page = 0;
+    var events = [].slice.call(document.querySelectorAll('#sql-events > .event'));
+    var status = [].slice.call(document.querySelectorAll('.sql-status'));
+    var prev = [].slice.call(document.querySelectorAll('.sql-prev'));
+    var next = [].slice.call(document.querySelectorAll('.sql-next'));
+    var sizers = [].slice.call(document.querySelectorAll('.sql-size'));
+    function pageCount() { return Math.max(1, Math.ceil(events.length / size)); }
+    function render() {
+      if (page > pageCount() - 1) page = pageCount() - 1;
+      if (page < 0) page = 0;
+      var start = page * size, end = Math.min(start + size, events.length);
+      for (var i = 0; i < events.length; i++) events[i].style.display = (i >= start && i < end) ? '' : 'none';
+      var text = 'Page ' + (page + 1) + ' of ' + pageCount();
+      status.forEach(function (el) { el.textContent = text; });
+      prev.forEach(function (el) { el.disabled = page === 0; });
+      next.forEach(function (el) { el.disabled = page >= pageCount() - 1; });
+    }
+    prev.forEach(function (el) { el.addEventListener('click', function () { if (page > 0) { page--; render(); } }); });
+    next.forEach(function (el) { el.addEventListener('click', function () { if (page < pageCount() - 1) { page++; render(); } }); });
+    sizers.forEach(function (el) { el.addEventListener('change', function () {
+      size = parseInt(el.value, 10) || ${DEFAULT_PAGE_SIZE};
+      sizers.forEach(function (other) { other.value = el.value; });
+      page = 0;
+      render();
+    }); });
+    render();
+  })();</script>`;
+
+  return `${summary}${alerts}<div id="sql-events">${items}</div>${pager}${script}`;
 }
 
 function redisPanel(profile: RequestProfile): string {

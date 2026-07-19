@@ -3,6 +3,10 @@ import type { RequestProfile } from '../../interfaces/profile.interface';
 
 export interface CorrelationToken {
   profile: RequestProfile;
+  /** ORM model of the operation that opened this token, when known. */
+  model?: string;
+  /** ORM operation that opened this token, when known. */
+  operation?: string;
   /** How many raw query events were attributed to this operation. */
   attached: number;
 }
@@ -24,8 +28,8 @@ export class PrismaCorrelator {
   private stack: CorrelationToken[] = [];
   private recent?: { token: CorrelationToken; endedAt: number };
 
-  begin(profile: RequestProfile): CorrelationToken {
-    const token: CorrelationToken = { profile, attached: 0 };
+  begin(profile: RequestProfile, model?: string, operation?: string): CorrelationToken {
+    const token: CorrelationToken = { profile, model, operation, attached: 0 };
     this.stack.push(token);
     return token;
   }

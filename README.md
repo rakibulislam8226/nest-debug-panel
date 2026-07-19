@@ -84,7 +84,7 @@ At startup the panel scans your app's providers and instruments what it recogniz
 
 You can turn this off with `autoInstrument: false`. A few things still need one line of manual setup, simply because they're constructor options in the library itself:
 
-- **Prisma raw SQL text.** Prisma only emits query events if the client is created with `log: [{ emit: 'event', level: 'query' }]`. Without it you'll see `User.findMany (12ms)` instead of the actual SQL. Both are useful; the raw SQL is better.
+- **Prisma raw SQL text.** On **Prisma 7+ with a driver adapter** (e.g. `@prisma/adapter-pg`) auto-instrumentation captures raw SQL with **zero config** — it wraps the adapter directly, so you get the actual query text, params and timing without touching how the client is created. Each row is tagged with the ORM model and operation that produced it, so you see the SQL *and* its `User.findMany` context together (like Laravel Telescope / Django Silk). On older Prisma (no driver adapter) raw SQL still comes from query events, which require the client be created with `log: [{ emit: 'event', level: 'query' }]`; without either, you'll see `User.findMany (12ms)` instead of the SQL, and a one-time hint tells you how to enable it.
 - **Mongoose, Drizzle and Knex** hook in at construction time, so wire them explicitly (two lines each, shown below).
 - Clients created outside Nest's DI container.
 
