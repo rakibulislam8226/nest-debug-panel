@@ -81,6 +81,25 @@ describe('DebugContextService', () => {
     expect(profile.http).toHaveLength(0);
   });
 
+  it('records logs into the active profile', () => {
+    const profile = makeProfile('logs');
+    service.run(profile, () => {
+      service.recordLog({ level: 'info', message: 'hello world' });
+      service.recordLog({ level: 'error', message: 'boom', context: 'AuthService' });
+    });
+    expect(profile.logs).toHaveLength(2);
+    expect(profile.logs?.[0]).toMatchObject({ level: 'info', message: 'hello world' });
+    expect(profile.logs?.[1]).toMatchObject({ level: 'error', context: 'AuthService' });
+    expect(profile.logs?.every((log) => log.at >= 0)).toBe(true);
+  });
+
+  it('respects the captureLogs flag', () => {
+    const gated = new DebugContextService(resolveDebugOptions({ enabled: true, captureLogs: false }));
+    const profile = makeProfile('nolog');
+    gated.run(profile, () => gated.recordLog({ level: 'log', message: 'ignored' }));
+    expect(profile.logs ?? []).toHaveLength(0);
+  });
+
   it('records exceptions with stack and status', () => {
     const profile = makeProfile('err');
     service.run(profile, () => {

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DebugModule, FetchPlugin } from '../src';
 import { DemoController } from './demo.controller';
+import { DemoGateway } from './demo.gateway';
 import { FakeDatabaseService } from './fake-database.service';
 
 @Module({
@@ -23,6 +24,6 @@ import { FakeDatabaseService } from './fake-database.service';
     }),
   ],
   controllers: [DemoController],
-  providers: [FakeDatabaseService],
+  providers: [FakeDatabaseService, DemoGateway],
 })
 export class AppModule {}

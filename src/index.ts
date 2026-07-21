@@ -23,6 +23,7 @@ export { analyzeSql, normalizeSql, SqlAnalyzerOptions } from './analysis/sql-ana
 
 // Decorators
 export { DebugIgnore } from './decorators/debug-ignore.decorator';
+export { TrackSocketEvents } from './decorators/track-socket.decorator';
 
 // Plugins & adapters
 export { MemoryPlugin } from './plugins/memory/memory.plugin';

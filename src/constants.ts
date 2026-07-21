@@ -10,8 +10,17 @@ export const DEBUG_IGNORE_METADATA = 'nest-debug-panel:ignore';
 /** Nest's own metadata key for @HttpCode(). */
 export const HTTP_CODE_METADATA = '__httpCode__';
 
+/** Nest's own metadata key for @SubscribeMessage() (the socket event name). */
+export const SOCKET_MESSAGE_METADATA = 'message';
+
 /** Nest's own metadata key for controller paths (used to re-prefix the debug controller). */
 export const PATH_METADATA = 'path';
 
 /** Default route prefix for the debug API + UI. */
 export const DEFAULT_ROUTE_PREFIX = '__debug';
+
+/**
+ * Env var that force-enables/disables the panel. When set to a recognized
+ * boolean it overrides both `forRoot({ enabled })` and the `NODE_ENV` default.
+ */
+export const ENABLED_ENV_VAR = 'NEST_DEBUG_PANEL_ENABLED';

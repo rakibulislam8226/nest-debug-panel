@@ -1,10 +1,15 @@
 import type { DebugPlugin } from '../interfaces/plugin.interface';
 import type { DebugStorage } from '../interfaces/storage.interface';
-import { DEFAULT_ROUTE_PREFIX } from '../constants';
+import { DEFAULT_ROUTE_PREFIX, ENABLED_ENV_VAR } from '../constants';
+import { parseBoolEnv } from '../utils/common';
 
 /** Options accepted by `DebugModule.forRoot()`. */
 export interface DebugModuleOptions {
-  /** Master switch. Defaults to `NODE_ENV !== 'production'`. */
+  /**
+   * Master switch. Defaults to `NODE_ENV !== 'production'`. The
+   * `NEST_DEBUG_PANEL_ENABLED` env var, when set to a recognized boolean,
+   * overrides this option (see {@link resolveDebugOptions}).
+   */
   enabled?: boolean;
   /** How many request profiles to keep. Oldest are evicted. Default 200. */
   maxRequests?: number;
@@ -30,6 +35,18 @@ export interface DebugModuleOptions {
   captureRedis?: boolean;
   /** Accept outgoing HTTP-call events. Default true. */
   captureHttp?: boolean;
+  /**
+   * Capture `console.*` output emitted during a request and attach it to that
+   * request's profile (shown in the Logs monitor). Patches the global console
+   * while enabled; original output still prints. Default true.
+   */
+  captureLogs?: boolean;
+  /**
+   * Capture inbound socket.io events (`@SubscribeMessage` handlers) as their
+   * own profiles, with any SQL/Redis/HTTP they run. Auto-detected — active
+   * whenever a WebSocket context is seen. Default true. Set false to disable.
+   */
+  sockets?: boolean;
   /** Queries at/above this (ms) are flagged slow. Default 100. */
   slowQueryThreshold?: number;
   /** Requests at/above this (ms) are flagged slow. Default 500. */
@@ -71,6 +88,8 @@ export interface ResolvedDebugOptions {
   captureSql: boolean;
   captureRedis: boolean;
   captureHttp: boolean;
+  captureLogs: boolean;
+  captureSockets: boolean;
   slowQueryThreshold: number;
   slowRequestThreshold: number;
   nPlusOneThreshold: number;
@@ -101,7 +120,13 @@ function escapeRegExp(value: string): string {
 export function resolveDebugOptions(options: DebugModuleOptions = {}): ResolvedDebugOptions {
   const redactKeys = options.redactKeys ?? DEFAULT_REDACT_KEYS;
   return {
-    enabled: options.enabled ?? process.env.NODE_ENV !== 'production',
+    // Precedence: NEST_DEBUG_PANEL_ENABLED env var (wins when set) → the
+    // `enabled` option → the NODE_ENV default. Lets the panel be toggled from
+    // the environment without a code change.
+    enabled:
+      parseBoolEnv(process.env[ENABLED_ENV_VAR]) ??
+      options.enabled ??
+      process.env.NODE_ENV !== 'production',
     maxRequests: options.maxRequests ?? 200,
     captureRequestBody: options.captureRequestBody ?? true,
     captureResponseBody: options.captureResponseBody ?? true,
@@ -111,6 +136,8 @@ export function resolveDebugOptions(options: DebugModuleOptions = {}): ResolvedD
     captureSql: options.captureSql ?? true,
     captureRedis: options.captureRedis ?? true,
     captureHttp: options.captureHttp ?? true,
+    captureLogs: options.captureLogs ?? true,
+    captureSockets: options.sockets ?? true,
     slowQueryThreshold: options.slowQueryThreshold ?? 100,
     slowRequestThreshold: options.slowRequestThreshold ?? 500,
     nPlusOneThreshold: options.nPlusOneThreshold ?? 5,
