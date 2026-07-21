@@ -14,6 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Automatic socket.io event capture.** Inbound NestJS WebSocket handlers
+  (`@SubscribeMessage`) are now captured like HTTP requests with **zero extra
+  setup** — `DebugModule.forRoot()` is all you need, no per-gateway decorator.
+  (NestJS does not apply global interceptors to gateways, so the panel attaches
+  itself to every gateway at startup.) Each handler runs inside the same tracing
+  context, so every SQL/Redis/HTTP call it makes is recorded automatically, with
+  N+1 detection and a timeline, plus the event name, namespace, socket id, rooms,
+  handshake (redacted), payload and acknowledgement. Socket events appear in the
+  **same list** as HTTP requests with a `WS` badge and an All / HTTP / Socket
+  filter. Turn it off with `sockets: false`. An optional `@TrackSocketEvents()`
+  decorator is exported for edge cases the auto-attach can't reach. No new
+  dependency is added, and HTTP capture is unchanged.
 - **Prisma 7 zero-config raw SQL capture.** Auto-instrumentation now wraps the
   Prisma driver adapter (e.g. `@prisma/adapter-pg`) directly, so the actual SQL
   text, params and timing are captured without setting the `log` option. Each

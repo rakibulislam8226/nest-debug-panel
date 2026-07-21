@@ -10,6 +10,9 @@ export const DEBUG_IGNORE_METADATA = 'nest-debug-panel:ignore';
 /** Nest's own metadata key for @HttpCode(). */
 export const HTTP_CODE_METADATA = '__httpCode__';
 
+/** Nest's own metadata key for @SubscribeMessage() (the socket event name). */
+export const SOCKET_MESSAGE_METADATA = 'message';
+
 /** Nest's own metadata key for controller paths (used to re-prefix the debug controller). */
 export const PATH_METADATA = 'path';
 

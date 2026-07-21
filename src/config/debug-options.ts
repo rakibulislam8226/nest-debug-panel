@@ -30,6 +30,12 @@ export interface DebugModuleOptions {
   captureRedis?: boolean;
   /** Accept outgoing HTTP-call events. Default true. */
   captureHttp?: boolean;
+  /**
+   * Capture inbound socket.io events (`@SubscribeMessage` handlers) as their
+   * own profiles, with any SQL/Redis/HTTP they run. Auto-detected — active
+   * whenever a WebSocket context is seen. Default true. Set false to disable.
+   */
+  sockets?: boolean;
   /** Queries at/above this (ms) are flagged slow. Default 100. */
   slowQueryThreshold?: number;
   /** Requests at/above this (ms) are flagged slow. Default 500. */
@@ -71,6 +77,7 @@ export interface ResolvedDebugOptions {
   captureSql: boolean;
   captureRedis: boolean;
   captureHttp: boolean;
+  captureSockets: boolean;
   slowQueryThreshold: number;
   slowRequestThreshold: number;
   nPlusOneThreshold: number;
@@ -111,6 +118,7 @@ export function resolveDebugOptions(options: DebugModuleOptions = {}): ResolvedD
     captureSql: options.captureSql ?? true,
     captureRedis: options.captureRedis ?? true,
     captureHttp: options.captureHttp ?? true,
+    captureSockets: options.sockets ?? true,
     slowQueryThreshold: options.slowQueryThreshold ?? 100,
     slowRequestThreshold: options.slowRequestThreshold ?? 500,
     nPlusOneThreshold: options.nPlusOneThreshold ?? 5,

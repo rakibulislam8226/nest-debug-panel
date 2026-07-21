@@ -104,9 +104,31 @@ export interface SqlAnalysis {
   possibleNPlusOne: DuplicateQueryGroup[];
 }
 
-/** Everything captured for a single HTTP request. */
+/** Metadata for a captured socket.io event (inbound `@SubscribeMessage`). */
+export interface SocketMeta {
+  /** The event name the handler is subscribed to. */
+  event: string;
+  /** Namespace the socket belongs to (e.g. `/` or `/chat`). */
+  namespace?: string;
+  /** The socket's id. */
+  socketId?: string;
+  /** Rooms the socket has joined. */
+  rooms?: string[];
+  /** Sanitized handshake info (headers, query, auth, address). */
+  handshake?: Record<string, unknown>;
+  /** Handler return value / acknowledgement payload. */
+  ack?: unknown;
+}
+
+/**
+ * Everything captured for a single unit of work — an HTTP request (default)
+ * or an inbound socket.io event. The shape is shared so the storage, SQL
+ * analysis, timeline and detail UI work for both.
+ */
 export interface RequestProfile {
   id: string;
+  /** What produced this profile. Absent is treated as `'http'`. */
+  kind?: 'http' | 'socket';
   method: string;
   url: string;
   /** Route pattern when available (e.g. `/users/:id`). */
@@ -134,15 +156,22 @@ export interface RequestProfile {
   exception?: ExceptionInfo;
   memory?: MemoryProfile;
   sqlAnalysis?: SqlAnalysis;
+  /** Socket metadata, present when `kind === 'socket'`. */
+  socket?: SocketMeta;
   /** Free-form data recorded by plugins or user code. */
   custom: Record<string, unknown>;
 }
 
-/** Lightweight row for the request list. */
+/** Lightweight row for the request/socket list. */
 export interface RequestSummary {
   id: string;
+  kind: 'http' | 'socket';
   method: string;
   url: string;
+  /** Socket event name, when `kind === 'socket'`. */
+  event?: string;
+  /** Socket namespace, when `kind === 'socket'`. */
+  namespace?: string;
   statusCode?: number;
   durationMs?: number;
   startedAt: string;
@@ -156,8 +185,11 @@ export interface RequestSummary {
 export function toRequestSummary(profile: RequestProfile): RequestSummary {
   return {
     id: profile.id,
+    kind: profile.kind ?? 'http',
     method: profile.method,
     url: profile.url,
+    event: profile.socket?.event,
+    namespace: profile.socket?.namespace,
     statusCode: profile.statusCode,
     durationMs: profile.durationMs,
     startedAt: profile.startedAt,

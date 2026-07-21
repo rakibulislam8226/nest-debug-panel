@@ -70,6 +70,17 @@ On top of that:
 - **Exceptions** with name, message, stack trace, and how long the request ran before failing
 - **Memory**: heap and RSS deltas per request, event-loop delay
 - **A timeline** that lays all of the above in order, plus your own custom marks
+- **Socket.io events** — inbound `@SubscribeMessage` handlers captured like a request, with all the SQL/Redis/HTTP they run (see below)
+
+## Socket.io events
+
+If your app uses NestJS WebSocket gateways (`@WebSocketGateway` + `@SubscribeMessage`), every incoming event is captured **automatically** — just like HTTP. You don't touch your gateways or add any decorator; `DebugModule.forRoot()` is all it takes. (NestJS doesn't apply global interceptors to gateways, so the panel attaches itself to each gateway at startup for you.)
+
+Each event runs inside the same tracing context, so **every query it runs shows up automatically**, with N+1 detection, timeline and all — plus the event name, namespace, socket id, rooms, handshake (redacted), payload and acknowledgement.
+
+Socket events appear in the **same list** as HTTP requests, tagged with a `WS` badge; use the **All / HTTP / Socket** filter at the top to narrow down. Set `sockets: false` in `forRoot()` to turn socket capture off.
+
+> Capture is on by default. For rare cases the automatic attachment can't reach (e.g. a single handler, or a gateway created outside the module scan), the `@TrackSocketEvents()` decorator is exported as an explicit opt-in — normally you won't need it.
 
 ## Database, Redis and HTTP capture is automatic
 
@@ -103,6 +114,7 @@ DebugModule.forRoot({
   captureSql: true,
   captureRedis: true,
   captureHttp: true,
+  sockets: true,                // capture socket.io gateway events (automatic, no per-gateway setup)
   autoInstrument: true,         // scan providers and hook them automatically
   slowQueryThreshold: 100,      // ms; queries at or above get flagged
   slowRequestThreshold: 500,    // ms; requests at or above get flagged

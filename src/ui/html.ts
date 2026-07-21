@@ -64,6 +64,7 @@ export const BASE_STYLES = `
   .m-POST { background: #1f4a2e; color: #7ee2a0; }
   .m-PUT, .m-PATCH { background: #4a3a1f; color: #e2c57e; }
   .m-DELETE { background: #4a1f1f; color: #ff9e9e; }
+  .m-WS { background: #3a1f4a; color: #d79eff; }
   .m-OTHER { background: var(--panel2); color: var(--muted); }
   .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); }
   .info { color: var(--info); } .muted { color: var(--muted); }
@@ -101,6 +102,10 @@ export const BASE_STYLES = `
   .kv { width: auto; min-width: 50%; }
   .kv td:first-child { color: var(--muted); white-space: nowrap; padding-right: 24px; }
   .empty { text-align: center; color: var(--muted); padding: 48px 0; }
+  .filters { display: flex; gap: 6px; margin-bottom: 14px; }
+  .chip { background: var(--panel2); color: var(--muted); border: 1px solid var(--border); border-radius: 20px; padding: 5px 16px; font-size: 13px; cursor: pointer; }
+  .chip:hover { border-color: var(--accent); }
+  .chip.active { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 600; }
   .pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .pager-bottom { border-top: 1px solid var(--border); padding-top: 14px; margin: 16px 0 2px; }
   .pager-center { display: flex; align-items: center; gap: 12px; }

@@ -1,8 +1,23 @@
 import type { RequestProfile, TimelineEvent } from '../interfaces/profile.interface';
 import { esc, formatBytes, formatMs, jsonBlock, layout, statusClass } from './html';
 
+function renderCards(cards: Array<[string, string, string?]>): string {
+  return `<div class="cards">${cards
+    .map(
+      ([label, value, cls]) =>
+        `<div class="card"><div class="label">${esc(label)}</div><div class="value ${cls ?? ''}">${esc(value)}</div></div>`,
+    )
+    .join('')}</div>`;
+}
+
+function kvTable(rows: Array<[string, string]>): string {
+  return `<table class="kv">${rows
+    .map(([key, value]) => `<tr><td>${esc(key)}</td><td>${esc(value)}</td></tr>`)
+    .join('')}</table>`;
+}
+
 function overviewCards(profile: RequestProfile): string {
-  const cards: Array<[string, string, string?]> = [
+  return renderCards([
     ['Status', String(profile.statusCode ?? '—'), statusClass(profile.statusCode)],
     ['Duration', formatMs(profile.durationMs), profile.slow ? 'err' : undefined],
     ['SQL queries', String(profile.sql.length)],
@@ -11,13 +26,38 @@ function overviewCards(profile: RequestProfile): string {
     ['Response size', formatBytes(profile.responseSize)],
     ['IP', profile.ip ?? '—'],
     ['Time', new Date(profile.startedAt).toLocaleTimeString()],
+  ]);
+}
+
+function socketOverviewCards(profile: RequestProfile): string {
+  const socket = profile.socket;
+  return renderCards([
+    ['Event', socket?.event ?? '—'],
+    ['Namespace', socket?.namespace ?? '/'],
+    ['Duration', formatMs(profile.durationMs), profile.slow ? 'err' : undefined],
+    ['SQL queries', String(profile.sql.length)],
+    ['Redis commands', String(profile.redis.length)],
+    ['HTTP calls', String(profile.http.length)],
+    ['Socket ID', socket?.socketId ?? '—'],
+    ['Time', new Date(profile.startedAt).toLocaleTimeString()],
+  ]);
+}
+
+function socketPanel(profile: RequestProfile): string {
+  const socket = profile.socket;
+  if (!socket) return '<div class="empty">No socket metadata</div>';
+  const rows: Array<[string, string]> = [
+    ['Event', socket.event],
+    ['Namespace', socket.namespace ?? '/'],
+    ['Socket ID', socket.socketId ?? '—'],
+    ['Rooms', socket.rooms && socket.rooms.length ? socket.rooms.join(', ') : '—'],
   ];
-  return `<div class="cards">${cards
-    .map(
-      ([label, value, cls]) =>
-        `<div class="card"><div class="label">${esc(label)}</div><div class="value ${cls ?? ''}">${esc(value)}</div></div>`,
-    )
-    .join('')}</div>`;
+  const meta = kvTable(rows);
+  const heading = (text: string) => `<h3 style="margin:18px 0 6px;font-size:14px;">${esc(text)}</h3>`;
+  return `${meta}
+    ${heading('Payload')}${jsonBlock(profile.body)}
+    ${heading('Acknowledgement')}${jsonBlock(socket.ack)}
+    ${socket.handshake ? `${heading('Handshake')}${jsonBlock(socket.handshake)}` : ''}`;
 }
 
 function timelinePanel(profile: RequestProfile): string {
@@ -196,69 +236,79 @@ function memoryPanel(profile: RequestProfile): string {
     rows.push(['Heap delta', `${sign}${formatBytes(Math.abs(memory.heapUsedDelta))}`]);
   }
   if (memory.eventLoopDelayMs !== undefined) rows.push(['Event loop delay (mean)', `${memory.eventLoopDelayMs}ms`]);
-  return `<table class="kv">${rows.map(([key, value]) => `<tr><td>${esc(key)}</td><td>${esc(value)}</td></tr>`).join('')}</table>`;
+  return kvTable(rows);
 }
-
-const TAB_DEFS = [
-  'Timeline',
-  'SQL',
-  'Redis',
-  'HTTP',
-  'Exception',
-  'Memory',
-  'Headers',
-  'Body',
-  'Response',
-] as const;
 
 export function renderDetailPage(
   profile: RequestProfile,
   routePrefix: string,
   slowQueryThreshold: number,
 ): string {
-  const panels: Record<(typeof TAB_DEFS)[number], string> = {
-    Timeline: timelinePanel(profile),
-    SQL: sqlPanel(profile, slowQueryThreshold),
-    Redis: redisPanel(profile),
-    HTTP: httpPanel(profile),
-    Exception: exceptionPanel(profile),
-    Memory: memoryPanel(profile),
-    Headers: jsonBlock(profile.headers),
-    Body: jsonBlock(profile.body),
-    Response: jsonBlock(profile.responseBody),
-  };
+  const isSocket = profile.kind === 'socket';
 
-  const counts: Partial<Record<(typeof TAB_DEFS)[number], number>> = {
+  const commonPanels: Array<[string, string]> = [
+    ['Timeline', timelinePanel(profile)],
+    ['SQL', sqlPanel(profile, slowQueryThreshold)],
+    ['Redis', redisPanel(profile)],
+    ['HTTP', httpPanel(profile)],
+    ['Exception', exceptionPanel(profile)],
+    ['Memory', memoryPanel(profile)],
+  ];
+  const panels: Array<[string, string]> = isSocket
+    ? [...commonPanels, ['Socket', socketPanel(profile)]]
+    : [
+        ...commonPanels,
+        ['Headers', jsonBlock(profile.headers)],
+        ['Body', jsonBlock(profile.body)],
+        ['Response', jsonBlock(profile.responseBody)],
+      ];
+
+  const counts: Record<string, number> = {
     SQL: profile.sql.length,
     Redis: profile.redis.length,
     HTTP: profile.http.length,
   };
 
-  const tabs = TAB_DEFS.map((name, index) => {
-    const count = counts[name] !== undefined ? ` (${counts[name]})` : '';
-    const hot = name === 'Exception' && profile.exception ? ' 🔥' : '';
-    return `<div class="tab ${index === 0 ? 'active' : ''}" data-tab="${name}">${name}${count}${hot}</div>`;
-  }).join('');
+  const tabs = panels
+    .map(([name], index) => {
+      const count = counts[name] !== undefined ? ` (${counts[name]})` : '';
+      const hot = name === 'Exception' && profile.exception ? ' 🔥' : '';
+      return `<div class="tab ${index === 0 ? 'active' : ''}" data-tab="${name}">${name}${count}${hot}</div>`;
+    })
+    .join('');
 
-  const panelDivs = TAB_DEFS.map(
-    (name, index) => `<div class="panel ${index === 0 ? 'active' : ''}" data-panel="${name}">${panels[name]}</div>`,
-  ).join('\n');
+  const panelDivs = panels
+    .map(
+      ([name, html], index) =>
+        `<div class="panel ${index === 0 ? 'active' : ''}" data-panel="${name}">${html}</div>`,
+    )
+    .join('\n');
 
   const userRow =
     profile.user !== undefined
       ? `<tr><td>User</td><td><pre class="code" style="padding:6px 10px">${esc(JSON.stringify(profile.user))}</pre></td></tr>`
       : '';
 
+  const heading = isSocket
+    ? `<span class="badge m-WS">WS</span>
+       ${esc(profile.socket?.event ?? '')}${
+         profile.socket?.namespace
+           ? ` <span class="muted" style="font-size:14px">on ${esc(profile.socket.namespace)}</span>`
+           : ''
+       }`
+    : `<span class="badge m-${esc(profile.method)}">${esc(profile.method)}</span>
+       ${esc(profile.url)}`;
+  const idLabel = isSocket ? 'Event ID' : 'Request ID';
+
   const body = `
-  <p><a href="/${esc(routePrefix)}">← All requests</a></p>
+  <p><a href="/${esc(routePrefix)}">← Back to all</a></p>
   <h2 style="margin:12px 0 4px; font-size: 18px;">
-    <span class="badge m-${esc(profile.method)}">${esc(profile.method)}</span>
-    ${esc(profile.url)}
+    ${heading}
   </h2>
-  ${profile.route ? `<div class="muted">route: ${esc(profile.route)}</div>` : ''}
-  ${overviewCards(profile)}
+  ${!isSocket && profile.route ? `<div class="muted">route: ${esc(profile.route)}</div>` : ''}
+  ${isSocket ? socketOverviewCards(profile) : overviewCards(profile)}
   <table class="kv">
-    <tr><td>Request ID</td><td>${esc(profile.id)}</td></tr>
+    <tr><td>${idLabel}</td><td>${esc(profile.id)}</td></tr>
     <tr><td>Started</td><td>${esc(profile.startedAt)}</td></tr>
     ${userRow}
   </table>
@@ -275,5 +325,8 @@ export function renderDetailPage(
     });
   </script>`;
 
-  return layout(`nest-debug-panel — ${profile.method} ${profile.url}`, body);
+  const title = isSocket
+    ? `nest-debug-panel — ${profile.socket?.event ?? 'socket'}`
+    : `nest-debug-panel — ${profile.method} ${profile.url}`;
+  return layout(title, body);
 }

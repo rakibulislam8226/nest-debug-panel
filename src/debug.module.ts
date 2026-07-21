@@ -13,6 +13,7 @@ import { DebugAccessGuard } from './guards/debug-access.guard';
 import { DebugController } from './api/debug.controller';
 import { PluginManager } from './plugins/plugin-manager.service';
 import { AutoInstrumentService } from './discovery/auto-instrument.service';
+import { SocketGatewayTracker } from './discovery/socket-gateway-tracker';
 import { MemoryStorage } from './storage/memory.storage';
 
 export interface DebugModuleAsyncOptions {
@@ -83,13 +84,17 @@ export class DebugModule {
         DebugAccessGuard,
         PluginManager,
         AutoInstrumentService,
+        DebugInterceptor,
+        SocketGatewayTracker,
         {
           provide: DEBUG_STORAGE,
           useFactory: (resolved: ResolvedDebugOptions) =>
             resolved.storage ?? new MemoryStorage(resolved.maxRequests),
           inject: [DEBUG_OPTIONS],
         },
-        { provide: APP_INTERCEPTOR, useClass: DebugInterceptor },
+        // Same instance drives HTTP (global) and gateways (auto-attached by
+        // SocketGatewayTracker), so both share one interceptor + one context.
+        { provide: APP_INTERCEPTOR, useExisting: DebugInterceptor },
       ],
       exports: [DEBUG_OPTIONS, DEBUG_STORAGE, DebugContextService, PluginManager],
     };

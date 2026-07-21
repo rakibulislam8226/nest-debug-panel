@@ -56,6 +56,7 @@ export class DebugController {
 
   @Get()
   async index(@Req() request: NegotiableRequest, @Res() response: AdapterResponse): Promise<void> {
+    // HTTP requests and socket events share one list; the UI filters by kind.
     const summaries = await this.storage.list();
     if (wantsHtml(request)) {
       try {
