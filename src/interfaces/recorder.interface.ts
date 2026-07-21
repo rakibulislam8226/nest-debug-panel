@@ -1,4 +1,12 @@
-import type { RequestProfile } from './profile.interface';
+import type { LogLevel, RequestProfile } from './profile.interface';
+
+export interface LogEventInput {
+  level: LogLevel;
+  message: string;
+  context?: string;
+  /** Epoch ms; defaults to now. */
+  startedAt?: number;
+}
 
 export interface SqlEventInput {
   source: string;
@@ -47,6 +55,7 @@ export interface DebugRecorder {
   recordRedis(event: RedisEventInput, target?: RequestProfile): void;
   recordHttp(event: HttpEventInput, target?: RequestProfile): void;
   recordException(error: unknown, target?: RequestProfile): void;
+  recordLog(event: LogEventInput, target?: RequestProfile): void;
   /** Add a custom timeline marker, e.g. `recorder.mark('Auth Guard', 2.1)`. */
   mark(label: string, durationMs?: number): void;
   /** Attach free-form data to the current profile. */

@@ -1,5 +1,5 @@
 import type { RequestProfile, TimelineEvent } from '../interfaces/profile.interface';
-import { esc, formatBytes, formatMs, jsonBlock, layout, statusClass } from './html';
+import { esc, formatBytes, formatMs, jsonBlock, layout, NAV_COUNTS_FN, statusClass } from './html';
 
 function renderCards(cards: Array<[string, string, string?]>): string {
   return `<div class="cards">${cards
@@ -210,6 +210,22 @@ function httpPanel(profile: RequestProfile): string {
     .join('');
 }
 
+function logsPanel(profile: RequestProfile): string {
+  const logs = profile.logs ?? [];
+  if (logs.length === 0) return '<div class="empty">No logs captured during this request</div>';
+  return logs
+    .map((log, index) => {
+      const level = ['error', 'warn', 'info', 'log', 'debug'].includes(log.level) ? log.level : 'log';
+      return `<div class="event">
+        <div class="head"><span class="num">${index + 1}.</span><span class="lvl lvl-${esc(level)}">${esc(level)}</span>${
+          log.context ? `<span class="pill">${esc(log.context)}</span>` : ''
+        }<span class="dur">${formatMs(log.at)}</span></div>
+        <pre>${esc(log.message)}</pre>
+      </div>`;
+    })
+    .join('');
+}
+
 function exceptionPanel(profile: RequestProfile): string {
   const exception = profile.exception;
   if (!exception) return '<div class="empty">No exception</div>';
@@ -251,6 +267,7 @@ export function renderDetailPage(
     ['SQL', sqlPanel(profile, slowQueryThreshold)],
     ['Redis', redisPanel(profile)],
     ['HTTP', httpPanel(profile)],
+    ['Logs', logsPanel(profile)],
     ['Exception', exceptionPanel(profile)],
     ['Memory', memoryPanel(profile)],
   ];
@@ -267,6 +284,7 @@ export function renderDetailPage(
     SQL: profile.sql.length,
     Redis: profile.redis.length,
     HTTP: profile.http.length,
+    Logs: profile.logs?.length ?? 0,
   };
 
   const tabs = panels
@@ -300,9 +318,11 @@ export function renderDetailPage(
        ${esc(profile.url)}`;
   const idLabel = isSocket ? 'Event ID' : 'Request ID';
 
+  const backView = isSocket ? 'sockets' : 'requests';
+  const topbar = `<a class="crumb" href="/${esc(routePrefix)}#/${backView}">← ${isSocket ? 'Sockets' : 'Requests'}</a><span class="muted" style="margin:0 4px">/</span><h1 style="font-size:14px">${idLabel} ${esc(String(profile.id).slice(0, 8))}</h1>`;
+
   const body = `
-  <p><a href="/${esc(routePrefix)}">← Back to all</a></p>
-  <h2 style="margin:12px 0 4px; font-size: 18px;">
+  <h2 style="margin:2px 0 4px; font-size: 18px;">
     ${heading}
   </h2>
   ${!isSocket && profile.route ? `<div class="muted">route: ${esc(profile.route)}</div>` : ''}
@@ -323,10 +343,21 @@ export function renderDetailPage(
         document.querySelector('[data-panel="' + tab.getAttribute('data-tab') + '"]').classList.add('active');
       });
     });
+    // One-shot: fill the sidebar monitor counts so the shell matches the home page.
+    ${NAV_COUNTS_FN}
+    fetch('/${esc(routePrefix)}', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.json(); })
+      .then(function (items) {
+        items = items || [];
+        applyNavCounts(items);
+        var t = document.getElementById('live-text');
+        if (t) t.textContent = items.length + ' captured';
+      })
+      .catch(function () { var t = document.getElementById('live-text'); if (t) t.textContent = ''; });
   </script>`;
 
   const title = isSocket
     ? `nest-debug-panel — ${profile.socket?.event ?? 'socket'}`
     : `nest-debug-panel — ${profile.method} ${profile.url}`;
-  return layout(title, body);
+  return layout(title, body, { routePrefix, active: backView, topbar });
 }

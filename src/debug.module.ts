@@ -8,6 +8,7 @@ import {
   resolveDebugOptions,
 } from './config/debug-options';
 import { DebugContextService } from './context/debug-context.service';
+import { LogCaptureService } from './logging/log-capture.service';
 import { DebugInterceptor } from './interceptor/debug.interceptor';
 import { DebugAccessGuard } from './guards/debug-access.guard';
 import { DebugController } from './api/debug.controller';
@@ -81,6 +82,7 @@ export class DebugModule {
       providers: [
         optionsProvider,
         DebugContextService,
+        LogCaptureService,
         DebugAccessGuard,
         PluginManager,
         AutoInstrumentService,

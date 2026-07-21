@@ -183,6 +183,7 @@ export class DebugInterceptor implements NestInterceptor {
       sql: [],
       redis: [],
       http: [],
+      logs: [],
       timeline: [{ at: 0, label: `Request started — ${method} ${url}`, kind: 'request' }],
       custom: {},
     };
@@ -224,6 +225,7 @@ export class DebugInterceptor implements NestInterceptor {
       sql: [],
       redis: [],
       http: [],
+      logs: [],
       timeline: [
         {
           at: 0,

@@ -5,6 +5,7 @@ import type { ResolvedDebugOptions } from '../config/debug-options';
 import type {
   DebugRecorder,
   HttpEventInput,
+  LogEventInput,
   RedisEventInput,
   SqlEventInput,
 } from '../interfaces/recorder.interface';
@@ -138,6 +139,26 @@ export class DebugContextService implements DebugRecorder {
       at,
     };
     profile.timeline.push({ at, label: `Exception ${profile.exception.name}: ${truncate(profile.exception.message, 100)}`, kind: 'exception' });
+  }
+
+  recordLog(event: LogEventInput, target?: RequestProfile): void {
+    this.safely(() => this.doRecordLog(event, target));
+  }
+
+  private doRecordLog(event: LogEventInput, target?: RequestProfile): void {
+    if (!this.options.captureLogs) return;
+    const profile = target ?? this.getProfile();
+    if (!profile) return;
+    const startedAt = event.startedAt ?? Date.now();
+    if (!profile.logs) profile.logs = [];
+    profile.logs.push({
+      id: eventId(),
+      level: event.level,
+      message: event.message,
+      context: event.context,
+      startedAt,
+      at: round2(Math.max(0, startedAt - profile.startedAtMs)),
+    });
   }
 
   mark(label: string, durationMs?: number): void {

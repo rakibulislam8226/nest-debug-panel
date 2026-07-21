@@ -42,6 +42,22 @@ export interface HttpClientEvent {
   error?: string;
 }
 
+export type LogLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
+
+/** A log line emitted while a request/socket event was executing. */
+export interface LogEvent {
+  id: string;
+  level: LogLevel;
+  /** Formatted message (all console args joined). */
+  message: string;
+  /** Logger context/category, when the source provides one. */
+  context?: string;
+  /** Epoch ms. */
+  startedAt: number;
+  /** Offset in ms from request start. */
+  at: number;
+}
+
 export type TimelineKind =
   | 'request'
   | 'sql'
@@ -152,6 +168,8 @@ export interface RequestProfile {
   sql: SqlQueryEvent[];
   redis: RedisCommandEvent[];
   http: HttpClientEvent[];
+  /** Log lines captured during execution. Optional for back-compat. */
+  logs?: LogEvent[];
   timeline: TimelineEvent[];
   exception?: ExceptionInfo;
   memory?: MemoryProfile;
@@ -180,6 +198,10 @@ export interface RequestSummary {
   httpCount: number;
   hasException: boolean;
   slow: boolean;
+  /** SQL analysis flagged a possible N+1 pattern. */
+  hasNPlusOne: boolean;
+  /** Number of log lines captured. */
+  logCount: number;
 }
 
 export function toRequestSummary(profile: RequestProfile): RequestSummary {
@@ -198,5 +220,7 @@ export function toRequestSummary(profile: RequestProfile): RequestSummary {
     httpCount: profile.http.length,
     hasException: profile.exception !== undefined,
     slow: profile.slow === true,
+    hasNPlusOne: (profile.sqlAnalysis?.possibleNPlusOne.length ?? 0) > 0,
+    logCount: profile.logs?.length ?? 0,
   };
 }

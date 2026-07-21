@@ -167,13 +167,15 @@ describe('DebugInterceptor — socket.io capture', () => {
     expect(summaries[0].kind).toBe('socket');
     expect(summaries[0].event).toBe('room.join');
 
-    // HTML list renders the event and the filter chips
+    // The dashboard is a client-rendered SPA: it ships the app shell with a
+    // Sockets monitor in the sidebar; the event rows are hydrated from the JSON
+    // feed above, not baked into the initial HTML.
     const page = await request(app.getHttpServer())
       .get('/__debug')
       .set('accept', 'text/html')
       .expect(200)
       .expect('content-type', /text\/html/);
-    expect(page.text).toContain('room.join');
-    expect(page.text).toContain('data-filter="socket"');
+    expect(page.text).toContain('<!DOCTYPE html>');
+    expect(page.text).toContain('data-view="sockets"');
   });
 });

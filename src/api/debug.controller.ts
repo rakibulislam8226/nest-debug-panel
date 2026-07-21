@@ -1,7 +1,8 @@
-import { Controller, Delete, Get, Inject, Param, Req, Res, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, Inject, Param, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { DEBUG_OPTIONS, DEBUG_STORAGE, DEFAULT_ROUTE_PREFIX } from '../constants';
 import type { ResolvedDebugOptions } from '../config/debug-options';
 import type { DebugStorage } from '../interfaces/storage.interface';
+import type { RequestProfile, RequestSummary } from '../interfaces/profile.interface';
 import { DebugAccessGuard } from '../guards/debug-access.guard';
 import { DebugIgnore } from '../decorators/debug-ignore.decorator';
 import { renderListPage } from '../ui/render-list';
@@ -55,18 +56,95 @@ export class DebugController {
   ) {}
 
   @Get()
-  async index(@Req() request: NegotiableRequest, @Res() response: AdapterResponse): Promise<void> {
-    // HTTP requests and socket events share one list; the UI filters by kind.
-    const summaries = await this.storage.list();
+  async index(
+    @Req() request: NegotiableRequest,
+    @Res() response: AdapterResponse,
+    @Query('feed') feed?: string,
+  ): Promise<void> {
+    // Aggregate feed for the dashboard's Queries view: a flattened list of
+    // every SQL query across all captured profiles. Lazily fetched by the UI,
+    // never part of the fast summaries poll below.
+    // Aggregate feeds for the dashboard's Queries / Logs views: flattened
+    // events across all profiles. Lazily fetched by the UI, never part of the
+    // fast summaries poll below.
+    if (feed === 'queries') {
+      const threshold = this.options.slowQueryThreshold;
+      const queries = await this.collectFlattened(
+        (summary) => summary.sqlCount > 0,
+        (profile) => profile.sql,
+        (query, requestId, requestLabel) => ({
+          requestId,
+          requestLabel,
+          source: query.source,
+          model: query.model,
+          operation: query.operation,
+          sql: query.sql,
+          durationMs: query.durationMs,
+          startedAt: query.startedAt,
+          slow: query.durationMs >= threshold,
+        }),
+      );
+      send(response, 200, JSON_TYPE, safeJson({ queries }));
+      return;
+    }
+    if (feed === 'logs') {
+      const logs = await this.collectFlattened(
+        (summary) => summary.logCount > 0,
+        (profile) => profile.logs,
+        (log, requestId, requestLabel) => ({
+          requestId,
+          requestLabel,
+          level: log.level,
+          message: log.message,
+          context: log.context,
+          startedAt: log.startedAt,
+        }),
+      );
+      send(response, 200, JSON_TYPE, safeJson({ logs }));
+      return;
+    }
+    // The dashboard shell is data-less (it hydrates from the JSON feed), so the
+    // HTML path skips the list() call entirely.
     if (wantsHtml(request)) {
       try {
-        send(response, 200, HTML, renderListPage(summaries, this.options.routePrefix));
+        send(response, 200, HTML, renderListPage(this.options.routePrefix));
         return;
       } catch {
         /* rendering failed — fall back to JSON below */
       }
     }
-    send(response, 200, JSON_TYPE, safeJson(summaries));
+    // HTTP requests and socket events share one list; the UI filters by kind.
+    send(response, 200, JSON_TYPE, safeJson(await this.storage.list()));
+  }
+
+  /**
+   * Walk every profile newest-first and flatten a per-profile array (SQL, logs,
+   * …) into one list, tagging each item with its owning request and capping at
+   * 1000. `has` skips profiles with nothing to contribute so we never fetch a
+   * full profile we don't need.
+   */
+  private async collectFlattened<T>(
+    has: (summary: RequestSummary) => boolean,
+    pick: (profile: RequestProfile) => T[] | undefined,
+    map: (item: T, requestId: string, requestLabel: string) => Record<string, unknown>,
+  ): Promise<Record<string, unknown>[]> {
+    const summaries = await this.storage.list();
+    const out: Record<string, unknown>[] = [];
+    for (const summary of summaries) {
+      if (!has(summary)) continue;
+      const profile = await this.storage.find(summary.id);
+      const items = profile && pick(profile);
+      if (!profile || !items?.length) continue;
+      const label =
+        profile.kind === 'socket'
+          ? (profile.socket?.event ?? 'socket')
+          : `${profile.method} ${profile.url}`;
+      for (const item of items) {
+        out.push(map(item, profile.id, label));
+        if (out.length >= 1000) return out;
+      }
+    }
+    return out;
   }
 
   @Get(':id')

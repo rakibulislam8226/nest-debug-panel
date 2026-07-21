@@ -31,6 +31,12 @@ export interface DebugModuleOptions {
   /** Accept outgoing HTTP-call events. Default true. */
   captureHttp?: boolean;
   /**
+   * Capture `console.*` output emitted during a request and attach it to that
+   * request's profile (shown in the Logs monitor). Patches the global console
+   * while enabled; original output still prints. Default true.
+   */
+  captureLogs?: boolean;
+  /**
    * Capture inbound socket.io events (`@SubscribeMessage` handlers) as their
    * own profiles, with any SQL/Redis/HTTP they run. Auto-detected — active
    * whenever a WebSocket context is seen. Default true. Set false to disable.
@@ -77,6 +83,7 @@ export interface ResolvedDebugOptions {
   captureSql: boolean;
   captureRedis: boolean;
   captureHttp: boolean;
+  captureLogs: boolean;
   captureSockets: boolean;
   slowQueryThreshold: number;
   slowRequestThreshold: number;
@@ -118,6 +125,7 @@ export function resolveDebugOptions(options: DebugModuleOptions = {}): ResolvedD
     captureSql: options.captureSql ?? true,
     captureRedis: options.captureRedis ?? true,
     captureHttp: options.captureHttp ?? true,
+    captureLogs: options.captureLogs ?? true,
     captureSockets: options.sockets ?? true,
     slowQueryThreshold: options.slowQueryThreshold ?? 100,
     slowRequestThreshold: options.slowRequestThreshold ?? 500,
