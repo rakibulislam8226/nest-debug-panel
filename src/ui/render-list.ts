@@ -275,7 +275,11 @@ const CLIENT_SCRIPT = `(function () {
     var title = document.getElementById('view-title');
     if (title) title.textContent = cfg.title;
     var search = document.getElementById('search');
-    if (search) { search.style.display = cfg.search ? '' : 'none'; if (!cfg.search) { filter = ''; search.value = ''; } }
+    if (search) {
+      var box = search.parentElement; // .search wrapper holds the icon + input
+      if (box) box.style.display = cfg.search ? '' : 'none';
+      if (!cfg.search) { filter = ''; search.value = ''; }
+    }
     renderView();
   }
 

@@ -14,6 +14,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`NEST_DEBUG_PANEL_ENABLED` environment variable.** Toggle the panel on or off
+  straight from the environment — no code change. When set to a recognized
+  boolean (`true`/`1`/`yes`/`on` or `false`/`0`/`no`/`off`, case-insensitive) it
+  **takes precedence** over both the `enabled` option and the `NODE_ENV` default,
+  so you can force it on in any environment or disable it in development. Leaving
+  it unset preserves the existing behavior exactly.
+- **Redesigned dashboard.** The UI is now a Telescope-style single-page app: a
+  fixed left sidebar of **monitors** (Overview, Requests, Sockets, Queries,
+  Logs, Exceptions, Slow) with live counts, and an **Overview** landing page
+  with KPI tiles (total requests, average latency, error rate, slow count, total
+  SQL, N+1 alerts), a latency chart and a recent-activity feed. Adds a global
+  **Queries** view (every SQL query across all requests, with N+1/duplicate
+  flags), plus **Exceptions** and **Slow** views, a filter/search box, relative
+  timestamps and a live-connection indicator. Fully responsive down to mobile,
+  and auto-refresh only re-renders when new data is captured (no flicker).
+- **Log capture.** `console.*` output emitted while a request or socket event is
+  executing is attached to that request's profile and surfaced in the new
+  **Logs** monitor (and a per-request Logs tab), with level, message and logger
+  context. The console is patched at bootstrap and restored on shutdown;
+  original output still prints. Turn it off with `captureLogs: false`.
 - **Automatic socket.io event capture.** Inbound NestJS WebSocket handlers
   (`@SubscribeMessage`) are now captured like HTTP requests with **zero extra
   setup** — `DebugModule.forRoot()` is all you need, no per-gateway decorator.

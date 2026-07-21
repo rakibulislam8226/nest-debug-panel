@@ -54,7 +54,7 @@ Start your app and open:
 http://localhost:<your-port>/__debug
 ```
 
-That's it. Hit any endpoint of your API and watch it appear in the dashboard (it refreshes every 2 seconds). If the list stays empty, make sure `NODE_ENV` isn't `production`, or pass `enabled: true` explicitly.
+That's it. Hit any endpoint of your API and watch it appear in the dashboard (it refreshes every 2 seconds). If the list stays empty, make sure `NODE_ENV` isn't `production`, pass `enabled: true` explicitly, or set `NEST_DEBUG_PANEL_ENABLED=true` in your environment (see [Enabling & disabling](#enabling--disabling)).
 
 Works with Node.js 18+, NestJS 9/10/11, and both Express and Fastify. No runtime dependencies.
 
@@ -105,7 +105,7 @@ Everything is optional. These are the defaults:
 
 ```ts
 DebugModule.forRoot({
-  enabled: process.env.NODE_ENV !== 'production',
+  enabled: process.env.NODE_ENV !== 'production', // NEST_DEBUG_PANEL_ENABLED env var overrides this
   maxRequests: 200,             // how many profiles to keep; oldest are evicted
   captureRequestBody: true,
   captureResponseBody: true,
@@ -114,6 +114,7 @@ DebugModule.forRoot({
   captureSql: true,
   captureRedis: true,
   captureHttp: true,
+  captureLogs: true,            // capture console.* emitted during a request (Logs monitor)
   sockets: true,                // capture socket.io gateway events (automatic, no per-gateway setup)
   autoInstrument: true,         // scan providers and hook them automatically
   slowQueryThreshold: 100,      // ms; queries at or above get flagged
@@ -132,6 +133,22 @@ DebugModule.forRoot({
 ```
 
 `forRootAsync({ imports, useFactory, inject, routePrefix })` works too. Note that `routePrefix` must be static in async mode, because routes are registered before async factories run.
+
+### Enabling & disabling
+
+The panel resolves its on/off state with this precedence (first match wins):
+
+1. **`NEST_DEBUG_PANEL_ENABLED` environment variable** — when set to a recognized boolean, it overrides everything below, so you can flip the panel on or off **without changing code**.
+2. **The `enabled` option** passed to `forRoot()` / `forRootAsync()`.
+3. **Default** — on when `NODE_ENV !== 'production'`, off otherwise.
+
+```bash
+NEST_DEBUG_PANEL_ENABLED=true   # force ON anywhere — even in production
+NEST_DEBUG_PANEL_ENABLED=false  # force OFF anywhere — even in development
+# (unset)                       # fall back to the `enabled` option, then NODE_ENV
+```
+
+Accepted values are case-insensitive: `true` / `1` / `yes` / `on` enable it, `false` / `0` / `no` / `off` disable it. Anything unrecognized (or an unset/empty var) is ignored, so the option and `NODE_ENV` default still apply. When disabled, the interceptor passes every request straight through, nothing is instrumented or stored, and the dashboard routes return 404.
 
 To exclude routes from profiling, use the `ignore` option (`'/health'`, globs like `'/static/*'`, or RegExps) or put `@DebugIgnore()` on a controller or handler. The panel's own routes are always excluded.
 
@@ -270,7 +287,7 @@ Build your own frontend or tooling on top of it if you like.
 
 ## Security
 
-- Off in production automatically, unless you explicitly set `enabled: true`. When off, the interceptor passes requests straight through and the debug routes return 404.
+- Off in production automatically, unless you set `enabled: true` or `NEST_DEBUG_PANEL_ENABLED=true` (see [Enabling & disabling](#enabling--disabling)). When off, the interceptor passes requests straight through and the debug routes return 404.
 - Sensitive body keys and headers are redacted before anything is stored.
 - Gate the dashboard with `authorize: (req) => req.user?.isAdmin === true`.
 - Profiles live in process memory by default and never leave your machine.

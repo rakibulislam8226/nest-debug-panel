@@ -1,10 +1,15 @@
 import type { DebugPlugin } from '../interfaces/plugin.interface';
 import type { DebugStorage } from '../interfaces/storage.interface';
-import { DEFAULT_ROUTE_PREFIX } from '../constants';
+import { DEFAULT_ROUTE_PREFIX, ENABLED_ENV_VAR } from '../constants';
+import { parseBoolEnv } from '../utils/common';
 
 /** Options accepted by `DebugModule.forRoot()`. */
 export interface DebugModuleOptions {
-  /** Master switch. Defaults to `NODE_ENV !== 'production'`. */
+  /**
+   * Master switch. Defaults to `NODE_ENV !== 'production'`. The
+   * `NEST_DEBUG_PANEL_ENABLED` env var, when set to a recognized boolean,
+   * overrides this option (see {@link resolveDebugOptions}).
+   */
   enabled?: boolean;
   /** How many request profiles to keep. Oldest are evicted. Default 200. */
   maxRequests?: number;
@@ -115,7 +120,13 @@ function escapeRegExp(value: string): string {
 export function resolveDebugOptions(options: DebugModuleOptions = {}): ResolvedDebugOptions {
   const redactKeys = options.redactKeys ?? DEFAULT_REDACT_KEYS;
   return {
-    enabled: options.enabled ?? process.env.NODE_ENV !== 'production',
+    // Precedence: NEST_DEBUG_PANEL_ENABLED env var (wins when set) → the
+    // `enabled` option → the NODE_ENV default. Lets the panel be toggled from
+    // the environment without a code change.
+    enabled:
+      parseBoolEnv(process.env[ENABLED_ENV_VAR]) ??
+      options.enabled ??
+      process.env.NODE_ENV !== 'production',
     maxRequests: options.maxRequests ?? 200,
     captureRequestBody: options.captureRequestBody ?? true,
     captureResponseBody: options.captureResponseBody ?? true,

@@ -10,6 +10,26 @@ export function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+const TRUE_TOKENS = new Set(['true', '1', 'yes', 'on']);
+const FALSE_TOKENS = new Set(['false', '0', 'no', 'off']);
+
+/**
+ * Parse a boolean from an environment variable, tolerantly.
+ *
+ * Returns `true`/`false` for recognized tokens (`true|1|yes|on` /
+ * `false|0|no|off`, case-insensitive), and `undefined` for anything else —
+ * unset, empty, or unrecognized — so callers can fall through to a default.
+ * Deliberately not `Boolean(value)`, which would treat the string `"false"`
+ * as `true`.
+ */
+export function parseBoolEnv(value: string | undefined): boolean | undefined {
+  if (value == null) return undefined;
+  const token = value.trim().toLowerCase();
+  if (TRUE_TOKENS.has(token)) return true;
+  if (FALSE_TOKENS.has(token)) return false;
+  return undefined;
+}
+
 export interface SerializedValue {
   value: unknown;
   /** Byte size of the full serialized form (before truncation). */

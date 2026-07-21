@@ -18,3 +18,9 @@ export const PATH_METADATA = 'path';
 
 /** Default route prefix for the debug API + UI. */
 export const DEFAULT_ROUTE_PREFIX = '__debug';
+
+/**
+ * Env var that force-enables/disables the panel. When set to a recognized
+ * boolean it overrides both `forRoot({ enabled })` and the `NODE_ENV` default.
+ */
+export const ENABLED_ENV_VAR = 'NEST_DEBUG_PANEL_ENABLED';

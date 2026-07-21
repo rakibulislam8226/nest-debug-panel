@@ -114,7 +114,7 @@ export const BASE_STYLES = `
   }
   .search input:focus { border-color: var(--accent); width: 280px; }
   .search input::placeholder { color: var(--muted); }
-  main { padding: 24px 26px 48px; flex: 1; }
+  main { padding: 24px 26px 48px; flex: 1; min-width: 0; overflow-x: auto; }
 
   .btn { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
   .btn:hover { border-color: var(--accent); }
@@ -238,14 +238,34 @@ export const BASE_STYLES = `
   .btn.solid-danger:hover { background: var(--err); border-color: var(--err); color: #fff; }
 
   @media (max-width: 720px) {
+    /* Sidebar becomes a top bar: brand row, then a single scrollable icon nav. */
     .app { grid-template-columns: 1fr; }
-    .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; }
-    .nav { display: flex; flex-wrap: wrap; padding: 6px; flex: 1 1 100%; }
+    .sidebar {
+      position: sticky; top: 0; z-index: 20; height: auto; min-width: 0;
+      flex-direction: column; border-right: none; border-bottom: 1px solid var(--border);
+    }
+    .brand { padding: 12px 16px; }
+    .nav {
+      flex: none; padding: 0 8px 8px; gap: 2px;
+      display: flex; flex-wrap: nowrap; overflow-x: auto;
+      -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    }
+    .nav::-webkit-scrollbar { display: none; }
     .nav-section { display: none; }
-    .nav-item { margin: 0; }
+    .nav-item { flex: 0 0 auto; margin: 0; padding: 7px 10px; }
+    .nav-item.active::before { display: none; }
     .nav-label { display: none; }
+    /* Label only the active monitor, so the icon row stays readable. */
+    .nav-item.active .nav-label { display: inline; }
     .side-foot { display: none; }
-    .search input, .search input:focus { width: 150px; }
+
+    /* Top bar wraps; search drops to its own full-width row. */
+    .topbar { position: static; height: auto; padding: 10px 16px; flex-wrap: wrap; row-gap: 8px; }
+    .topbar .spacer { display: none; }
+    .topbar .btn { font-size: 12px; padding: 6px 10px; }
+    .search { order: 5; flex: 1 1 100%; }
+    .search input, .search input:focus { width: 100%; }
+    main { padding: 16px; }
   }
 `;
 
@@ -269,8 +289,8 @@ const FAVICON =
       '</svg>',
   );
 
-const GITHUB_ICON =
-  '<svg class="gh" width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>';
+const LINKEDIN_ICON =
+  '<svg class="gh" width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.6 0H2.4A2.4 2.4 0 0 0 0 2.4v11.2A2.4 2.4 0 0 0 2.4 16h11.2a2.4 2.4 0 0 0 2.4-2.4V2.4A2.4 2.4 0 0 0 13.6 0zM4.9 13.4H2.6V6h2.3v7.4zM3.7 5A1.34 1.34 0 1 1 5 3.66 1.34 1.34 0 0 1 3.7 5zm9.7 8.4h-2.3V9.8c0-.86-.02-1.97-1.2-1.97s-1.38.94-1.38 1.9v3.67H6.2V6h2.2v1h.03a2.42 2.42 0 0 1 2.18-1.2c2.33 0 2.76 1.53 2.76 3.53v4.06z"/></svg>';
 
 const SEARCH_ICON =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
@@ -339,7 +359,7 @@ export function renderSidebar(active: string, base: string): string {
     </nav>
     <div class="side-foot">
       <div class="live" id="live-ind"><span class="live-dot"></span><span id="live-text">Connecting…</span></div>
-      <div class="author">Crafted by <a href="https://github.com/rakibulislam8226" target="_blank" rel="noopener noreferrer">${GITHUB_ICON} Rakibul Islam</a></div>
+      <div class="author">Crafted by <a href="https://bd.linkedin.com/in/rakibulislam8226" target="_blank" rel="noopener noreferrer">${LINKEDIN_ICON} Rakibul Islam</a></div>
     </div>
   </aside>`;
 }
@@ -404,4 +424,4 @@ export const NAV_COUNTS_FN = `function applyNavCounts(summaries) {
   return map;
 }`;
 
-export { SEARCH_ICON, GITHUB_ICON };
+export { SEARCH_ICON };
