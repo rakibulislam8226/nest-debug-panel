@@ -47,6 +47,16 @@ export interface DebugModuleOptions {
    * whenever a WebSocket context is seen. Default true. Set false to disable.
    */
   sockets?: boolean;
+  /**
+   * Capture background-job / message / scheduled runs as their own profiles,
+   * with any SQL/Redis/HTTP they run. Auto-detected across the DI container —
+   * BullMQ (`@nestjs/bullmq`), legacy `@nestjs/bull`, `@nestjs/microservices`
+   * consumers, `@nestjs/schedule`, and DI-provided bee-queue/Agenda/pg-boss —
+   * with no extra setup. Default true. Set false to disable.
+   */
+  jobs?: boolean;
+  /** Capture the job payload (`job.data`), redacted. Default true. */
+  captureJobData?: boolean;
   /** Queries at/above this (ms) are flagged slow. Default 100. */
   slowQueryThreshold?: number;
   /** Requests at/above this (ms) are flagged slow. Default 500. */
@@ -90,6 +100,8 @@ export interface ResolvedDebugOptions {
   captureHttp: boolean;
   captureLogs: boolean;
   captureSockets: boolean;
+  captureJobs: boolean;
+  captureJobData: boolean;
   slowQueryThreshold: number;
   slowRequestThreshold: number;
   nPlusOneThreshold: number;
@@ -138,6 +150,8 @@ export function resolveDebugOptions(options: DebugModuleOptions = {}): ResolvedD
     captureHttp: options.captureHttp ?? true,
     captureLogs: options.captureLogs ?? true,
     captureSockets: options.sockets ?? true,
+    captureJobs: options.jobs ?? true,
+    captureJobData: options.captureJobData ?? true,
     slowQueryThreshold: options.slowQueryThreshold ?? 100,
     slowRequestThreshold: options.slowRequestThreshold ?? 500,
     nPlusOneThreshold: options.nPlusOneThreshold ?? 5,

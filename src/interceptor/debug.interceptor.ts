@@ -17,15 +17,16 @@ import {
   DEBUG_OPTIONS,
   DEBUG_STORAGE,
   HTTP_CODE_METADATA,
+  RPC_PATTERN_METADATA,
   SOCKET_MESSAGE_METADATA,
 } from '../constants';
 import type { ResolvedDebugOptions } from '../config/debug-options';
 import type { DebugStorage } from '../interfaces/storage.interface';
-import type { RequestProfile } from '../interfaces/profile.interface';
+import type { JobMeta, RequestProfile } from '../interfaces/profile.interface';
 import { DebugContextService } from '../context/debug-context.service';
 import { PluginManager } from '../plugins/plugin-manager.service';
-import { analyzeSql } from '../analysis/sql-analyzer';
-import { byteSize, round2, safeSerialize, sanitizeHeaders, sanitizeValue } from '../utils/common';
+import { captureJobSuccess, createJobProfile, finalizeProfile } from '../context/profile-lifecycle';
+import { byteSize, safeSerialize, sanitizeHeaders, sanitizeValue } from '../utils/common';
 
 interface RequestLike {
   method?: string;
@@ -104,6 +105,14 @@ export class DebugInterceptor implements NestInterceptor {
           return next.handle();
         }
         profile = this.createSocketProfile(executionContext);
+      } else if (type === 'rpc') {
+        // @nestjs/microservices consumers (@MessagePattern/@EventPattern) flow
+        // through the interceptor pipeline as the `rpc` context. Capture each
+        // as a job profile so its SQL/Redis/HTTP attaches via the same context.
+        if (!this.options.captureJobs || this.isDebugIgnored(executionContext)) {
+          return next.handle();
+        }
+        profile = this.createRpcProfile(executionContext);
       } else {
         return next.handle();
       }
@@ -245,6 +254,36 @@ export class DebugInterceptor implements NestInterceptor {
     return profile;
   }
 
+  private createRpcProfile(executionContext: ExecutionContext): RequestProfile {
+    const rpc = executionContext.switchToRpc();
+    const data = rpc.getData<unknown>();
+    const meta: JobMeta = {
+      library: 'microservice',
+      queue: this.resolveTransport(rpc.getContext<unknown>()),
+      jobName: this.resolvePattern(executionContext),
+    };
+    return createJobProfile(meta, data, this.options);
+  }
+
+  /** Derive a transport label from the RPC context class name (KafkaContext → kafka). */
+  private resolveTransport(context: unknown): string {
+    const name = (context as { constructor?: { name?: string } })?.constructor?.name;
+    if (!name || name === 'Object') return 'microservice';
+    return name.replace(/Context$/, '').toLowerCase() || 'microservice';
+  }
+
+  /** Resolve the @MessagePattern/@EventPattern value for the handler. */
+  private resolvePattern(executionContext: ExecutionContext): string {
+    try {
+      const pattern = this.reflector.get<unknown>(RPC_PATTERN_METADATA, executionContext.getHandler());
+      const first = Array.isArray(pattern) ? pattern[0] : pattern;
+      if (first === undefined || first === null) return executionContext.getHandler().name || 'message';
+      return typeof first === 'string' ? first : JSON.stringify(first);
+    } catch {
+      return 'message';
+    }
+  }
+
   /** Sanitize + size-limit a request/event body, respecting captureRequestBody. */
   private serializeBody(value: unknown): unknown {
     if (!this.options.captureRequestBody) return undefined;
@@ -288,6 +327,10 @@ export class DebugInterceptor implements NestInterceptor {
   private captureSuccess(profile: RequestProfile, data: unknown, executionContext: ExecutionContext): void {
     if (profile.kind === 'socket') {
       this.captureSocketSuccess(profile, data);
+      return;
+    }
+    if (profile.kind === 'job') {
+      captureJobSuccess(profile, data, this.options);
       return;
     }
     const response = executionContext.switchToHttp().getResponse<ResponseLike>();
@@ -341,9 +384,12 @@ export class DebugInterceptor implements NestInterceptor {
   }
 
   private captureFailure(profile: RequestProfile, error: unknown): void {
-    // Status codes are an HTTP concept; leave socket profiles without one.
-    if (profile.kind !== 'socket') {
+    // Status codes are an HTTP concept; leave socket/job profiles without one.
+    if (profile.kind !== 'socket' && profile.kind !== 'job') {
       profile.statusCode = error instanceof HttpException ? error.getStatus() : 500;
+    }
+    if (profile.kind === 'job' && profile.job) {
+      profile.job.failedReason = error instanceof Error ? error.message : String(error);
     }
     this.debugContext.recordException(error, profile);
     if (this.options.captureResponseBody && error instanceof HttpException) {
@@ -352,23 +398,13 @@ export class DebugInterceptor implements NestInterceptor {
   }
 
   private finish(profile: RequestProfile, startedHr: number): void {
-    const durationMs = round2(performance.now() - startedHr);
-    profile.durationMs = durationMs;
-    profile.endedAtMs = Date.now();
-    profile.slow = durationMs >= this.options.slowRequestThreshold;
-    profile.timeline.push({
-      at: durationMs,
-      label:
-        profile.kind === 'socket'
-          ? 'Completed'
-          : `Response${profile.statusCode !== undefined ? ` ${profile.statusCode}` : ''}`,
-      kind: 'response',
+    finalizeProfile(profile, {
+      startedHr,
+      options: this.options,
+      plugins: this.plugins,
+      storage: this.storage,
+      logger: this.logger,
     });
-    profile.sqlAnalysis = analyzeSql(profile.sql, this.options);
-    this.plugins.dispatchRequestEnd(profile);
-    Promise.resolve(this.storage.save(profile)).catch((error) =>
-      this.logger.warn(`Failed to persist request profile: ${String(error)}`),
-    );
   }
 
   private shouldIgnore(url: string, executionContext: ExecutionContext): boolean {

@@ -133,6 +133,7 @@ export const BASE_STYLES = `
   .m-PUT, .m-PATCH { background: #4a3a1f; color: #e2c57e; }
   .m-DELETE { background: #4a1f1f; color: #ff9e9e; }
   .m-WS { background: #3a1f4a; color: #d79eff; }
+  .m-JOB { background: #143a44; color: #7fd3e6; }
   .m-OTHER { background: var(--panel2); color: var(--muted); }
   .lvl { display: inline-block; padding: 2px 8px; border-radius: 5px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
   .lvl-error { background: rgba(248,81,73,0.15); color: var(--err); }
@@ -315,6 +316,8 @@ const NAV_ICONS: Record<string, string> = {
     '<svg viewBox="0 0 24 24"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>',
   sockets:
     '<svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>',
+  jobs:
+    '<svg viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>',
   queries:
     '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>',
   logs:
@@ -336,6 +339,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'overview', label: 'Overview' },
   { key: 'requests', label: 'Requests' },
   { key: 'sockets', label: 'Sockets' },
+  { key: 'jobs', label: 'Jobs' },
   { key: 'queries', label: 'Queries' },
   { key: 'logs', label: 'Logs' },
   { key: 'exceptions', label: 'Exceptions', hot: true },
@@ -415,16 +419,18 @@ export function layout(title: string, body: string, opts: LayoutOptions): string
  * count badges. One definition keeps the count keys in a single place.
  */
 export const NAV_COUNTS_FN = `function applyNavCounts(summaries) {
-  var http = 0, sock = 0, sql = 0, log = 0, exc = 0, slow = 0;
+  var http = 0, sock = 0, job = 0, sql = 0, log = 0, exc = 0, slow = 0;
   for (var i = 0; i < summaries.length; i++) {
     var s = summaries[i];
-    if (s.kind === 'socket') sock++; else http++;
+    if (s.kind === 'socket') sock++;
+    else if (s.kind === 'job') job++;
+    else http++;
     sql += s.sqlCount || 0;
     log += s.logCount || 0;
     if (s.hasException) exc++;
     if (s.slow) slow++;
   }
-  var map = { requests: http, sockets: sock, queries: sql, logs: log, exceptions: exc, slow: slow };
+  var map = { requests: http, sockets: sock, jobs: job, queries: sql, logs: log, exceptions: exc, slow: slow };
   var els = document.querySelectorAll('.nav-count');
   for (var j = 0; j < els.length; j++) {
     var key = els[j].getAttribute('data-count');

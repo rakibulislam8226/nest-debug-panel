@@ -13,7 +13,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-23
+
 ### Added
+- **Automatic background-job capture.** Background work is now captured like HTTP
+  requests and socket events, with **zero extra setup** — `DebugModule.forRoot()`
+  is all you need. Each run becomes its own profile with the SQL/Redis/HTTP it
+  makes (N+1 detection, timeline and all), plus the queue, job name, id, attempt,
+  payload (redacted) and return value, surfaced in a new **Jobs** monitor.
+  Auto-detected across the DI container for **`@nestjs/bullmq`** (`@Processor` /
+  `WorkerHost`), **`@nestjs/microservices`** consumers (`@MessagePattern` /
+  `@EventPattern`), **`@nestjs/schedule`** (`@Cron`/`@Interval`/`@Timeout`), and
+  DI-provided **bee-queue / Agenda** (best-effort). Turn it off with `jobs: false`,
+  skip a processor with `@DebugIgnore()`, or drop payloads with
+  `captureJobData: false`. For workers outside Nest's DI (or legacy `@nestjs/bull`)
+  the exported `@TrackJob()` decorator and `trackJob()` helper capture a handler in
+  one line. No new dependency is added.
+- **SQL formatting in the dashboard.** Click a SQL row in the request **Timeline**
+  to expand the full statement, pretty-printed. The **SQL** tab gains a
+  Pretty / Compact / Raw format selector that reformats every captured query
+  in place.
+- **Broader npm keywords** so the package surfaces for more NestJS
+  debugging/profiling/queue searches.
 - **`NEST_DEBUG_PANEL_ENABLED` environment variable.** Toggle the panel on or off
   straight from the environment — no code change. When set to a recognized
   boolean (`true`/`1`/`yes`/`on` or `false`/`0`/`no`/`off`, case-insensitive) it
@@ -59,4 +80,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Auto-instrumentation only warns that raw SQL is unavailable when neither a
   driver adapter nor query-event logging is present.
 
-[Unreleased]: https://github.com/rakibulislam8226/nest-debug-panel/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/rakibulislam8226/nest-debug-panel/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/rakibulislam8226/nest-debug-panel/compare/v0.1.7...v0.2.0

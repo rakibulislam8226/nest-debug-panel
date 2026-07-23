@@ -138,7 +138,9 @@ export class DebugController {
       const label =
         profile.kind === 'socket'
           ? (profile.socket?.event ?? 'socket')
-          : `${profile.method} ${profile.url}`;
+          : profile.kind === 'job'
+            ? `${profile.job?.queue ?? 'job'}:${profile.job?.jobName ?? ''}`
+            : `${profile.method} ${profile.url}`;
       for (const item of items) {
         out.push(map(item, profile.id, label));
         if (out.length >= 1000) return out;

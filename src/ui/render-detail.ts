@@ -60,6 +60,40 @@ function socketPanel(profile: RequestProfile): string {
     ${socket.handshake ? `${heading('Handshake')}${jsonBlock(socket.handshake)}` : ''}`;
 }
 
+function jobOverviewCards(profile: RequestProfile): string {
+  const job = profile.job;
+  return renderCards([
+    ['Queue', job?.queue ?? '—'],
+    ['Job', job?.jobName ?? '—'],
+    ['Status', profile.exception ? 'Failed' : 'Completed', profile.exception ? 'err' : 'ok'],
+    ['Duration', formatMs(profile.durationMs), profile.slow ? 'err' : undefined],
+    ['SQL queries', String(profile.sql.length)],
+    ['Redis commands', String(profile.redis.length)],
+    ['HTTP calls', String(profile.http.length)],
+    ['Time', new Date(profile.startedAt).toLocaleTimeString()],
+  ]);
+}
+
+function jobPanel(profile: RequestProfile): string {
+  const job = profile.job;
+  if (!job) return '<div class="empty">No job metadata</div>';
+  const rows: Array<[string, string]> = [
+    ['Library', job.library],
+    ['Queue', job.queue],
+    ['Job name', job.jobName],
+    ['Job ID', job.jobId ?? '—'],
+  ];
+  if (job.attemptsMade !== undefined)
+    rows.push(['Attempt', job.maxAttempts ? `${job.attemptsMade} / ${job.maxAttempts}` : String(job.attemptsMade)]);
+  if (job.priority !== undefined) rows.push(['Priority', String(job.priority)]);
+  if (job.delayMs !== undefined) rows.push(['Delay', formatMs(job.delayMs)]);
+  const meta = kvTable(rows);
+  const heading = (text: string) => `<h3 style="margin:18px 0 6px;font-size:14px;">${esc(text)}</h3>`;
+  return `${meta}
+    ${heading('Payload')}${jsonBlock(profile.body)}
+    ${job.failedReason ? `${heading('Failure')}<pre class="err code">${esc(job.failedReason)}</pre>` : `${heading('Return value')}${jsonBlock(job.returnValue)}`}`;
+}
+
 const FMT_BUTTONS = `<div class="fmt">
   <button class="fmt-btn active" data-fmt="pretty" type="button">Pretty</button>
   <button class="fmt-btn" data-fmt="compact" type="button">Compact</button>
@@ -322,6 +356,7 @@ export function renderDetailPage(
   slowQueryThreshold: number,
 ): string {
   const isSocket = profile.kind === 'socket';
+  const isJob = profile.kind === 'job';
 
   const commonPanels: Array<[string, string]> = [
     ['Timeline', timelinePanel(profile)],
@@ -334,12 +369,14 @@ export function renderDetailPage(
   ];
   const panels: Array<[string, string]> = isSocket
     ? [...commonPanels, ['Socket', socketPanel(profile)]]
-    : [
-        ...commonPanels,
-        ['Headers', jsonBlock(profile.headers)],
-        ['Body', jsonBlock(profile.body)],
-        ['Response', jsonBlock(profile.responseBody)],
-      ];
+    : isJob
+      ? [...commonPanels, ['Job', jobPanel(profile)]]
+      : [
+          ...commonPanels,
+          ['Headers', jsonBlock(profile.headers)],
+          ['Body', jsonBlock(profile.body)],
+          ['Response', jsonBlock(profile.responseBody)],
+        ];
 
   const counts: Record<string, number> = {
     SQL: profile.sql.length,
@@ -375,19 +412,33 @@ export function renderDetailPage(
            ? ` <span class="muted" style="font-size:14px">on ${esc(profile.socket.namespace)}</span>`
            : ''
        }`
-    : `<span class="badge m-${esc(profile.method)}">${esc(profile.method)}</span>
+    : isJob
+      ? `<span class="badge m-JOB">JOB</span>
+         ${esc(profile.job?.jobName ?? '')}${
+           profile.job?.queue
+             ? ` <span class="muted" style="font-size:14px">on ${esc(profile.job.queue)}</span>`
+             : ''
+         }`
+      : `<span class="badge m-${esc(profile.method)}">${esc(profile.method)}</span>
        ${esc(profile.url)}`;
-  const idLabel = isSocket ? 'Event ID' : 'Request ID';
+  const idLabel = isSocket ? 'Event ID' : isJob ? 'Run ID' : 'Request ID';
 
-  const backView = isSocket ? 'sockets' : 'requests';
-  const topbar = `<a class="crumb" href="/${esc(routePrefix)}#/${backView}">← ${isSocket ? 'Sockets' : 'Requests'}</a><span class="muted" style="margin:0 4px">/</span><h1 style="font-size:14px">${idLabel} ${esc(String(profile.id).slice(0, 8))}</h1>`;
+  const backView = isSocket ? 'sockets' : isJob ? 'jobs' : 'requests';
+  const backLabel = isSocket ? 'Sockets' : isJob ? 'Jobs' : 'Requests';
+  const topbar = `<a class="crumb" href="/${esc(routePrefix)}#/${backView}">← ${backLabel}</a><span class="muted" style="margin:0 4px">/</span><h1 style="font-size:14px">${idLabel} ${esc(String(profile.id).slice(0, 8))}</h1>`;
+
+  const overviewCardsHtml = isSocket
+    ? socketOverviewCards(profile)
+    : isJob
+      ? jobOverviewCards(profile)
+      : overviewCards(profile);
 
   const body = `
   <h2 style="margin:2px 0 4px; font-size: 18px;">
     ${heading}
   </h2>
-  ${!isSocket && profile.route ? `<div class="muted">route: ${esc(profile.route)}</div>` : ''}
-  ${isSocket ? socketOverviewCards(profile) : overviewCards(profile)}
+  ${profile.kind === undefined || profile.kind === 'http' ? (profile.route ? `<div class="muted">route: ${esc(profile.route)}</div>` : '') : ''}
+  ${overviewCardsHtml}
   <table class="kv">
     <tr><td>${idLabel}</td><td>${esc(profile.id)}</td></tr>
     <tr><td>Started</td><td>${esc(profile.startedAt)}</td></tr>
@@ -419,6 +470,8 @@ export function renderDetailPage(
 
   const title = isSocket
     ? `nest-debug-panel — ${profile.socket?.event ?? 'socket'}`
-    : `nest-debug-panel — ${profile.method} ${profile.url}`;
+    : isJob
+      ? `nest-debug-panel — ${profile.job?.jobName ?? 'job'}`
+      : `nest-debug-panel — ${profile.method} ${profile.url}`;
   return layout(title, body, { routePrefix, active: backView, topbar });
 }

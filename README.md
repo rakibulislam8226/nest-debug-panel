@@ -71,6 +71,7 @@ On top of that:
 - **Memory**: heap and RSS deltas per request, event-loop delay
 - **A timeline** that lays all of the above in order, plus your own custom marks
 - **Socket.io events** — inbound `@SubscribeMessage` handlers captured like a request, with all the SQL/Redis/HTTP they run (see below)
+- **Background jobs** — BullMQ processors, microservice consumers and scheduled tasks captured like a request, with everything they run (see below)
 
 ## Socket.io events
 
@@ -81,6 +82,36 @@ Each event runs inside the same tracing context, so **every query it runs shows 
 Socket events appear in the **same list** as HTTP requests, tagged with a `WS` badge; use the **All / HTTP / Socket** filter at the top to narrow down. Set `sockets: false` in `forRoot()` to turn socket capture off.
 
 > Capture is on by default. For rare cases the automatic attachment can't reach (e.g. a single handler, or a gateway created outside the module scan), the `@TrackSocketEvents()` decorator is exported as an explicit opt-in — normally you won't need it.
+
+## Background jobs
+
+Background work is captured the same way as requests — **install the package, `DebugModule.forRoot()`, done.** No annotations, no per-queue wiring. Each run becomes its own profile with everything it did (SQL/Redis/HTTP, N+1, timeline, exceptions), plus the queue, job name, id, attempt, payload (redacted) and return value. Runs appear in the **Jobs** monitor.
+
+What's captured automatically, with **zero extra code**:
+
+| Library / pattern | Auto | How |
+| --- | --- | --- |
+| **`@nestjs/bullmq`** (`@Processor` + `WorkerHost`) | ✅ always | the processor class is wrapped at startup |
+| **`@nestjs/microservices`** (`@MessagePattern` / `@EventPattern`) | ✅ always | consumers already flow through the interceptor |
+| **`@nestjs/schedule`** (`@Cron` / `@Interval` / `@Timeout`) | ✅ always | decorated methods are wrapped at startup |
+| **bee-queue / Agenda** (registered as a DI provider) | ✅ best-effort | the queue's registrar is wrapped so your handler is traced |
+
+Turn it off with `jobs: false`, skip one processor with `@DebugIgnore()`, or drop payloads with `captureJobData: false`.
+
+**The only case needing a line of code** is a worker created entirely outside Nest's DI (e.g. a bare `new Worker(...)`), or legacy `@nestjs/bull`. Annotate the handler with `@TrackJob()`, or wrap it with `trackJob()`:
+
+```ts
+import { TrackJob, trackJob } from 'nest-debug-panel';
+
+// As a decorator on any method that handles a job:
+@TrackJob({ queue: 'emails', jobName: 'welcome' })
+async handle(job: Job) { /* ... */ }
+
+// Or functionally, around any handler:
+new Worker('emails', (job) =>
+  trackJob({ library: 'bullmq', queue: 'emails', jobName: job.name }, () => doWork(job), job.data),
+);
+```
 
 ## Database, Redis and HTTP capture is automatic
 
@@ -116,6 +147,8 @@ DebugModule.forRoot({
   captureHttp: true,
   captureLogs: true,            // capture console.* emitted during a request (Logs monitor)
   sockets: true,                // capture socket.io gateway events (automatic, no per-gateway setup)
+  jobs: true,                   // capture background jobs / messages / scheduled runs (automatic)
+  captureJobData: true,         // capture the job payload (job.data), redacted
   autoInstrument: true,         // scan providers and hook them automatically
   slowQueryThreshold: 100,      // ms; queries at or above get flagged
   slowRequestThreshold: 500,    // ms; requests at or above get flagged

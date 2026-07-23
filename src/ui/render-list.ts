@@ -1,6 +1,6 @@
 import { esc, layout, NAV_COUNTS_FN, SEARCH_ICON } from './html';
 
-const EMPTY_LIST = `<div class="empty"><div class="big">Nothing here yet</div>Make an API request or fire a socket event, then it shows up live.</div>`;
+const EMPTY_LIST = `<div class="empty"><div class="big">Nothing here yet</div>Make a request, fire a socket event or run a job — then it shows up live.</div>`;
 
 /**
  * The dashboard is a small single-page app: one HTML shell with a fixed
@@ -14,7 +14,7 @@ export function renderListPage(routePrefix: string): string {
   <div class="modal-overlay" id="clear-modal">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="clear-title">
       <h3 id="clear-title">Clear all history?</h3>
-      <p>This removes every captured request and socket event. This cannot be undone.</p>
+      <p>This removes every captured request, socket event and job. This cannot be undone.</p>
       <div class="modal-actions">
         <button class="btn" onclick="closeClearModal()">Cancel</button>
         <button class="btn solid-danger" onclick="confirmClear()">Clear all</button>
@@ -44,6 +44,7 @@ const CLIENT_SCRIPT = `(function () {
     overview:   { title: 'Overview',   search: false },
     requests:   { title: 'Requests',   search: true, kind: 'http' },
     sockets:    { title: 'Sockets',    search: true, kind: 'socket' },
+    jobs:       { title: 'Jobs',       search: true, kind: 'job' },
     queries:    { title: 'Queries',    search: true },
     logs:       { title: 'Logs',       search: true },
     exceptions: { title: 'Exceptions', search: true },
@@ -71,6 +72,7 @@ const CLIENT_SCRIPT = `(function () {
   function isError(s) { return s.hasException || (s.statusCode != null && s.statusCode >= 500); }
   function typeBadge(s) {
     if (s.kind === 'socket') return '<span class="badge m-WS">WS</span>';
+    if (s.kind === 'job') return '<span class="badge m-JOB">JOB</span>';
     return '<span class="badge ' + methodClass(s.method) + '">' + escHtml(s.method) + '</span>';
   }
   function labelOf(s) {
@@ -78,10 +80,14 @@ const CLIENT_SCRIPT = `(function () {
       var ns = (s.namespace && s.namespace !== '/') ? ' <span class="muted">' + escHtml(s.namespace) + '</span>' : '';
       return escHtml(s.event == null ? '—' : s.event) + ns;
     }
+    if (s.kind === 'job') {
+      var q = s.queue ? ' <span class="muted">' + escHtml(s.queue) + '</span>' : '';
+      return escHtml(s.jobName == null ? '—' : s.jobName) + q;
+    }
     return escHtml(s.url);
   }
   function statusCell(s) {
-    if (s.kind === 'socket') return s.hasException ? '<span class="err">error</span>' : '<span class="muted">—</span>';
+    if (s.kind === 'socket' || s.kind === 'job') return s.hasException ? '<span class="err">failed</span>' : '<span class="ok">ok</span>';
     return '<span class="' + statusClass(s.statusCode) + '">' + (s.statusCode == null ? '—' : s.statusCode) + '</span>';
   }
   function pillsOf(s) {
@@ -179,6 +185,7 @@ const CLIENT_SCRIPT = `(function () {
   }
   function labelOfPlain(s) {
     if (s.kind === 'socket') return (s.event || '—');
+    if (s.kind === 'job') return ((s.queue ? s.queue + ':' : '') + (s.jobName || '—'));
     return (s.method || '') + ' ' + (s.url || '');
   }
 
@@ -246,8 +253,9 @@ const CLIENT_SCRIPT = `(function () {
     if (view === 'queries') { el.innerHTML = renderQueries(); return; }
     if (view === 'logs') { el.innerHTML = renderLogs(); return; }
     var items = summaries.filter(matchesFilter);
-    if (view === 'requests') items = items.filter(function (s) { return s.kind !== 'socket'; });
+    if (view === 'requests') items = items.filter(function (s) { return s.kind !== 'socket' && s.kind !== 'job'; });
     else if (view === 'sockets') items = items.filter(function (s) { return s.kind === 'socket'; });
+    else if (view === 'jobs') items = items.filter(function (s) { return s.kind === 'job'; });
     else if (view === 'exceptions') items = items.filter(function (s) { return s.hasException; });
     else if (view === 'slow') items = items.filter(function (s) { return s.slow; });
     el.innerHTML = listTable(items);

@@ -1,6 +1,6 @@
 {
   "name": "nest-debug-panel",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "Debug panel for NestJS — request inspector & profiler with a built-in dashboard: SQL queries, N+1 detection, Redis, HTTP calls, exceptions, memory and a per-request timeline.",
   "license": "MIT",
   "author": "Rakibul Islam <rakibulislam8226@gmail.com>",

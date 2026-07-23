@@ -120,6 +120,30 @@ export interface SqlAnalysis {
   possibleNPlusOne: DuplicateQueryGroup[];
 }
 
+/** Metadata for a captured background job / message / scheduled run. */
+export interface JobMeta {
+  /** Source library, e.g. `bullmq`, `bull`, `microservice`, `cron`, `bee-queue`. */
+  library: string;
+  /** Queue / worker / transport name (or `schedule` for cron). */
+  queue: string;
+  /** Job name, message pattern, or cron identifier. */
+  jobName: string;
+  /** Underlying job id, when the library exposes one. */
+  jobId?: string;
+  /** Attempt number of this run (BullMQ/Bull). */
+  attemptsMade?: number;
+  /** Configured max attempts, when known. */
+  maxAttempts?: number;
+  /** Job priority, when known. */
+  priority?: number;
+  /** Configured delay in ms, when known. */
+  delayMs?: number;
+  /** Serialized handler return value, on success. */
+  returnValue?: unknown;
+  /** Failure reason, when the run threw. */
+  failedReason?: string;
+}
+
 /** Metadata for a captured socket.io event (inbound `@SubscribeMessage`). */
 export interface SocketMeta {
   /** The event name the handler is subscribed to. */
@@ -144,7 +168,7 @@ export interface SocketMeta {
 export interface RequestProfile {
   id: string;
   /** What produced this profile. Absent is treated as `'http'`. */
-  kind?: 'http' | 'socket';
+  kind?: 'http' | 'socket' | 'job';
   method: string;
   url: string;
   /** Route pattern when available (e.g. `/users/:id`). */
@@ -176,6 +200,8 @@ export interface RequestProfile {
   sqlAnalysis?: SqlAnalysis;
   /** Socket metadata, present when `kind === 'socket'`. */
   socket?: SocketMeta;
+  /** Job metadata, present when `kind === 'job'`. */
+  job?: JobMeta;
   /** Free-form data recorded by plugins or user code. */
   custom: Record<string, unknown>;
 }
@@ -183,13 +209,17 @@ export interface RequestProfile {
 /** Lightweight row for the request/socket list. */
 export interface RequestSummary {
   id: string;
-  kind: 'http' | 'socket';
+  kind: 'http' | 'socket' | 'job';
   method: string;
   url: string;
   /** Socket event name, when `kind === 'socket'`. */
   event?: string;
   /** Socket namespace, when `kind === 'socket'`. */
   namespace?: string;
+  /** Queue / transport name, when `kind === 'job'`. */
+  queue?: string;
+  /** Job name / message pattern, when `kind === 'job'`. */
+  jobName?: string;
   statusCode?: number;
   durationMs?: number;
   startedAt: string;
@@ -212,6 +242,8 @@ export function toRequestSummary(profile: RequestProfile): RequestSummary {
     url: profile.url,
     event: profile.socket?.event,
     namespace: profile.socket?.namespace,
+    queue: profile.job?.queue,
+    jobName: profile.job?.jobName,
     statusCode: profile.statusCode,
     durationMs: profile.durationMs,
     startedAt: profile.startedAt,

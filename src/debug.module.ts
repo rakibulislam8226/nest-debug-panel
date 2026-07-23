@@ -15,6 +15,7 @@ import { DebugController } from './api/debug.controller';
 import { PluginManager } from './plugins/plugin-manager.service';
 import { AutoInstrumentService } from './discovery/auto-instrument.service';
 import { SocketGatewayTracker } from './discovery/socket-gateway-tracker';
+import { JobTracker } from './discovery/job-tracker.service';
 import { MemoryStorage } from './storage/memory.storage';
 
 export interface DebugModuleAsyncOptions {
@@ -88,6 +89,7 @@ export class DebugModule {
         AutoInstrumentService,
         DebugInterceptor,
         SocketGatewayTracker,
+        JobTracker,
         {
           provide: DEBUG_STORAGE,
           useFactory: (resolved: ResolvedDebugOptions) =>
@@ -98,7 +100,7 @@ export class DebugModule {
         // SocketGatewayTracker), so both share one interceptor + one context.
         { provide: APP_INTERCEPTOR, useExisting: DebugInterceptor },
       ],
-      exports: [DEBUG_OPTIONS, DEBUG_STORAGE, DebugContextService, PluginManager],
+      exports: [DEBUG_OPTIONS, DEBUG_STORAGE, DebugContextService, PluginManager, JobTracker],
     };
   }
 }

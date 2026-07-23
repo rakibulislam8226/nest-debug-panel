@@ -13,6 +13,22 @@ export const HTTP_CODE_METADATA = '__httpCode__';
 /** Nest's own metadata key for @SubscribeMessage() (the socket event name). */
 export const SOCKET_MESSAGE_METADATA = 'message';
 
+/** Nest's own metadata key for @MessagePattern()/@EventPattern() (microservices). */
+export const RPC_PATTERN_METADATA = 'microservices:pattern';
+
+/** @nestjs/bullmq processor metadata key (holds `{ name: queueName }`). */
+export const BULLMQ_PROCESSOR_METADATA = 'bullmq:processor_metadata';
+
+/** Metadata key set by the @TrackJob() decorator. */
+export const TRACK_JOB_METADATA = 'nest-debug-panel:track-job';
+
+/** @nestjs/schedule method-metadata keys (stable public constants). */
+export const SCHEDULE_METADATA_KEYS = [
+  'SCHEDULE_CRON_OPTIONS',
+  'SCHEDULE_INTERVAL_OPTIONS',
+  'SCHEDULE_TIMEOUT_OPTIONS',
+] as const;
+
 /** Nest's own metadata key for controller paths (used to re-prefix the debug controller). */
 export const PATH_METADATA = 'path';
 
