@@ -1,4 +1,4 @@
-import { Controller, Delete, Get, Inject, Param, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, Inject, Logger, Param, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { DEBUG_OPTIONS, DEBUG_STORAGE, DEFAULT_ROUTE_PREFIX } from '../constants';
 import type { ResolvedDebugOptions } from '../config/debug-options';
 import type { DebugStorage } from '../interfaces/storage.interface';
@@ -50,10 +50,37 @@ interface AdapterResponse {
 @UseGuards(DebugAccessGuard)
 @Controller(DEFAULT_ROUTE_PREFIX)
 export class DebugController {
+  private readonly logger = new Logger('NestDebugPanel');
+
   constructor(
     @Inject(DEBUG_OPTIONS) private readonly options: ResolvedDebugOptions,
     @Inject(DEBUG_STORAGE) private readonly storage: DebugStorage,
   ) {}
+
+  /**
+   * Viewing the panel must never 500 just because the storage backend (e.g. a
+   * Redis blip) is momentarily unreachable — that's a hiccup in the dashboard,
+   * never in the host app. Reads degrade to an empty/absent result with a
+   * warning; the poll simply shows nothing this tick and recovers on its own
+   * once storage is back.
+   */
+  private async safeList(): Promise<RequestSummary[]> {
+    try {
+      return await this.storage.list();
+    } catch (error) {
+      this.logger.warn(`Storage list() failed: ${String(error)}`);
+      return [];
+    }
+  }
+
+  private async safeFind(id: string): Promise<RequestProfile | undefined> {
+    try {
+      return await this.storage.find(id);
+    } catch (error) {
+      this.logger.warn(`Storage find() failed: ${String(error)}`);
+      return undefined;
+    }
+  }
 
   @Get()
   async index(
@@ -114,7 +141,7 @@ export class DebugController {
       }
     }
     // HTTP requests and socket events share one list; the UI filters by kind.
-    send(response, 200, JSON_TYPE, safeJson(await this.storage.list()));
+    send(response, 200, JSON_TYPE, safeJson(await this.safeList()));
   }
 
   /**
@@ -128,17 +155,19 @@ export class DebugController {
     pick: (profile: RequestProfile) => T[] | undefined,
     map: (item: T, requestId: string, requestLabel: string) => Record<string, unknown>,
   ): Promise<Record<string, unknown>[]> {
-    const summaries = await this.storage.list();
+    const summaries = await this.safeList();
     const out: Record<string, unknown>[] = [];
     for (const summary of summaries) {
       if (!has(summary)) continue;
-      const profile = await this.storage.find(summary.id);
+      const profile = await this.safeFind(summary.id);
       const items = profile && pick(profile);
       if (!profile || !items?.length) continue;
       const label =
         profile.kind === 'socket'
           ? (profile.socket?.event ?? 'socket')
-          : `${profile.method} ${profile.url}`;
+          : profile.kind === 'job'
+            ? `${profile.job?.queue ?? 'job'}:${profile.job?.jobName ?? ''}`
+            : `${profile.method} ${profile.url}`;
       for (const item of items) {
         out.push(map(item, profile.id, label));
         if (out.length >= 1000) return out;
@@ -153,7 +182,7 @@ export class DebugController {
     @Req() request: NegotiableRequest,
     @Res() response: AdapterResponse,
   ): Promise<void> {
-    const profile = await this.storage.find(id);
+    const profile = await this.safeFind(id);
     if (!profile) {
       send(
         response,
@@ -181,8 +210,13 @@ export class DebugController {
 
   @Delete()
   async clear(@Res() response: AdapterResponse): Promise<void> {
-    await this.storage.clear();
-    send(response, 200, JSON_TYPE, safeJson({ cleared: true }));
+    try {
+      await this.storage.clear();
+      send(response, 200, JSON_TYPE, safeJson({ cleared: true }));
+    } catch (error) {
+      this.logger.warn(`Storage clear() failed: ${String(error)}`);
+      send(response, 200, JSON_TYPE, safeJson({ cleared: false }));
+    }
   }
 }
 

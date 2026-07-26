@@ -1,6 +1,6 @@
 import { DynamicModule, Module, Provider } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
-import { DEBUG_OPTIONS, DEBUG_STORAGE, PATH_METADATA } from './constants';
+import { DEBUG_OPTIONS, DEBUG_STORAGE, PATH_METADATA, REDIS_URL_ENV_VARS, STORAGE_ENV_VAR } from './constants';
 import {
   DebugModuleOptions,
   normalizeRoutePrefix,
@@ -15,7 +15,11 @@ import { DebugController } from './api/debug.controller';
 import { PluginManager } from './plugins/plugin-manager.service';
 import { AutoInstrumentService } from './discovery/auto-instrument.service';
 import { SocketGatewayTracker } from './discovery/socket-gateway-tracker';
+import { JobTracker } from './discovery/job-tracker.service';
 import { MemoryStorage } from './storage/memory.storage';
+import { RedisStorage } from './storage/redis.storage';
+import type { DebugStorage } from './interfaces/storage.interface';
+import { Logger } from '@nestjs/common';
 
 export interface DebugModuleAsyncOptions {
   imports?: DynamicModule['imports'];
@@ -88,17 +92,17 @@ export class DebugModule {
         AutoInstrumentService,
         DebugInterceptor,
         SocketGatewayTracker,
+        JobTracker,
         {
           provide: DEBUG_STORAGE,
-          useFactory: (resolved: ResolvedDebugOptions) =>
-            resolved.storage ?? new MemoryStorage(resolved.maxRequests),
+          useFactory: (resolved: ResolvedDebugOptions) => resolveStorage(resolved),
           inject: [DEBUG_OPTIONS],
         },
         // Same instance drives HTTP (global) and gateways (auto-attached by
         // SocketGatewayTracker), so both share one interceptor + one context.
         { provide: APP_INTERCEPTOR, useExisting: DebugInterceptor },
       ],
-      exports: [DEBUG_OPTIONS, DEBUG_STORAGE, DebugContextService, PluginManager],
+      exports: [DEBUG_OPTIONS, DEBUG_STORAGE, DebugContextService, PluginManager, JobTracker],
     };
   }
 }
@@ -109,4 +113,67 @@ export class DebugModule {
  */
 function applyRoutePrefix(prefix: string): void {
   Reflect.defineMetadata(PATH_METADATA, prefix, DebugController);
+}
+
+/**
+ * Choose the storage driver.
+ *
+ * Precedence: a `DebugStorage` instance passed to `forRoot()` always wins (it was
+ * built deliberately). Otherwise the `NEST_DEBUG_PANEL_STORAGE` env var selects
+ * the mode (`redis` | `memory`), defaulting to in-memory. The `redis` mode
+ * connects via {@link REDIS_URL_ENV_VARS} and is fail-open — any problem (no URL,
+ * no `ioredis`, bad connection) logs a warning and falls back to in-memory rather
+ * than breaking bootstrap.
+ */
+function resolveStorage(resolved: ResolvedDebugOptions): DebugStorage {
+  if (resolved.storage) return resolved.storage;
+
+  const logger = new Logger('NestDebugPanel');
+  const mode = readStorageEnv(logger) ?? 'memory';
+  if (mode !== 'redis') return new MemoryStorage(resolved.maxRequests);
+
+  const url = readRedisUrl();
+  if (!url) {
+    logger.warn(
+      `${STORAGE_ENV_VAR}=redis but no Redis URL found (set ${REDIS_URL_ENV_VARS.join(' or ')}) — falling back to in-memory storage.`,
+    );
+    return new MemoryStorage(resolved.maxRequests);
+  }
+  try {
+    return new RedisStorage({ url, maxRequests: resolved.maxRequests });
+  } catch (error) {
+    logger.warn(`Redis storage unavailable (${String(error)}); falling back to in-memory storage.`);
+    return new MemoryStorage(resolved.maxRequests);
+  }
+}
+
+/** Read + validate the storage-mode env var. Unknown values warn and are ignored. */
+function readStorageEnv(logger: Logger): 'redis' | 'memory' | undefined {
+  const raw = process.env[STORAGE_ENV_VAR];
+  if (!raw) return undefined;
+  const value = raw.trim().toLowerCase();
+  if (value === 'redis' || value === 'memory') return value;
+  logger.warn(`Ignoring ${STORAGE_ENV_VAR}="${raw}" — expected "redis" or "memory".`);
+  return undefined;
+}
+
+/**
+ * Resolve a Redis connection string. Prefers an explicit URL
+ * ({@link REDIS_URL_ENV_VARS}); otherwise builds one from the common discrete
+ * vars (`REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD`/`REDIS_DB`) so apps that
+ * configure Redis in parts (not a URL) need no extra variable.
+ */
+export function readRedisUrl(): string | undefined {
+  for (const name of REDIS_URL_ENV_VARS) {
+    const value = process.env[name];
+    if (value) return value;
+  }
+  const host = process.env.REDIS_HOST;
+  if (!host) return undefined;
+  const port = process.env.REDIS_PORT ?? '6379';
+  const password = process.env.REDIS_PASSWORD;
+  const db = process.env.REDIS_DB;
+  const auth = password ? `:${encodeURIComponent(password)}@` : '';
+  const dbPath = db ? `/${db}` : '';
+  return `redis://${auth}${host}:${port}${dbPath}`;
 }

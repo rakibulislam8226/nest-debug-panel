@@ -1,5 +1,5 @@
 import type { RequestProfile, TimelineEvent } from '../interfaces/profile.interface';
-import { esc, formatBytes, formatMs, jsonBlock, layout, NAV_COUNTS_FN, statusClass } from './html';
+import { esc, formatBytes, formatMs, jsonBlock, layout, NAV_COUNTS_FN, SQL_FORMAT_JS, statusClass } from './html';
 
 function renderCards(cards: Array<[string, string, string?]>): string {
   return `<div class="cards">${cards
@@ -60,23 +60,96 @@ function socketPanel(profile: RequestProfile): string {
     ${socket.handshake ? `${heading('Handshake')}${jsonBlock(socket.handshake)}` : ''}`;
 }
 
+function jobOverviewCards(profile: RequestProfile): string {
+  const job = profile.job;
+  return renderCards([
+    ['Queue', job?.queue ?? '—'],
+    ['Job', job?.jobName ?? '—'],
+    ['Status', profile.exception ? 'Failed' : 'Completed', profile.exception ? 'err' : 'ok'],
+    ['Duration', formatMs(profile.durationMs), profile.slow ? 'err' : undefined],
+    ['SQL queries', String(profile.sql.length)],
+    ['Redis commands', String(profile.redis.length)],
+    ['HTTP calls', String(profile.http.length)],
+    ['Time', new Date(profile.startedAt).toLocaleTimeString()],
+  ]);
+}
+
+function jobPanel(profile: RequestProfile): string {
+  const job = profile.job;
+  if (!job) return '<div class="empty">No job metadata</div>';
+  const rows: Array<[string, string]> = [
+    ['Library', job.library],
+    ['Queue', job.queue],
+    ['Job name', job.jobName],
+    ['Job ID', job.jobId ?? '—'],
+  ];
+  if (job.attemptsMade !== undefined)
+    rows.push(['Attempt', job.maxAttempts ? `${job.attemptsMade} / ${job.maxAttempts}` : String(job.attemptsMade)]);
+  if (job.priority !== undefined) rows.push(['Priority', String(job.priority)]);
+  if (job.delayMs !== undefined) rows.push(['Delay', formatMs(job.delayMs)]);
+  const meta = kvTable(rows);
+  const heading = (text: string) => `<h3 style="margin:18px 0 6px;font-size:14px;">${esc(text)}</h3>`;
+  return `${meta}
+    ${heading('Payload')}${jsonBlock(profile.body)}
+    ${job.failedReason ? `${heading('Failure')}<pre class="err code">${esc(job.failedReason)}</pre>` : `${heading('Return value')}${jsonBlock(job.returnValue)}`}`;
+}
+
+const FMT_BUTTONS = `<div class="fmt">
+  <button class="fmt-btn active" data-fmt="pretty" type="button">Pretty</button>
+  <button class="fmt-btn" data-fmt="compact" type="button">Compact</button>
+  <button class="fmt-btn" data-fmt="raw" type="button">Raw</button>
+</div>`;
+
 function timelinePanel(profile: RequestProfile): string {
   const total = Math.max(profile.durationMs ?? 1, 1);
+  // SQL timeline events are pushed in lock-step with `profile.sql` (see
+  // DebugContextService.doRecordSql), so the k-th sql-kind row maps to the
+  // k-th captured query — pull the full statement from there for the expander.
+  let sqlIdx = 0;
   const rows = profile.timeline
     .map((event: TimelineEvent) => {
       const left = Math.min((event.at / total) * 100, 99);
       const width = event.durationMs !== undefined ? Math.min((event.durationMs / total) * 100, 100 - left) : 0.5;
       const duration = event.durationMs !== undefined ? ` (${formatMs(event.durationMs)})` : '';
-      return `<div class="tl-row">
+      const fullSql = event.kind === 'sql' ? profile.sql[sqlIdx++]?.sql : undefined;
+      const rowCls = fullSql ? 'tl-row tl-sql-row' : 'tl-row';
+      const dataSql = fullSql ? ` data-sql="${esc(fullSql)}"` : '';
+      const row = `<div class="${rowCls}"${dataSql}>
         <div class="tl-at">${formatMs(event.at)}</div>
         <div class="tl-track">
           <div class="tl-bar k-${esc(event.kind)}" style="left:${left.toFixed(2)}%;width:${Math.max(width, 0.5).toFixed(2)}%"></div>
           <div class="tl-label">${esc(event.label)}${esc(duration)}</div>
         </div>
       </div>`;
+      const detail = fullSql ? `<div class="tl-detail">${FMT_BUTTONS}<pre></pre></div>` : '';
+      return row + detail;
     })
     .join('');
-  return `<div class="tl">${rows || '<div class="empty">No timeline events</div>'}</div>`;
+  const script = `<script>${SQL_FORMAT_JS}(function () {
+    [].slice.call(document.querySelectorAll('.tl-sql-row')).forEach(function (row) {
+      var detail = row.nextElementSibling;
+      if (!detail || detail.className.indexOf('tl-detail') === -1) return;
+      var pre = detail.querySelector('pre');
+      var btns = [].slice.call(detail.querySelectorAll('.fmt-btn'));
+      var raw = row.getAttribute('data-sql') || '';
+      function paint(mode) { pre.textContent = window.__formatSql(raw, mode); }
+      row.addEventListener('click', function () {
+        var open = detail.classList.toggle('open');
+        row.classList.toggle('open', open);
+        if (open && !pre.textContent) paint('pretty');
+      });
+      btns.forEach(function (b) {
+        b.addEventListener('click', function () {
+          btns.forEach(function (x) { x.classList.remove('active'); });
+          b.classList.add('active');
+          paint(b.getAttribute('data-fmt'));
+        });
+      });
+    });
+  })();</script>`;
+  return `<div class="tl">${rows || '<div class="empty">No timeline events</div>'}</div>${
+    profile.sql.length ? script : ''
+  }`;
 }
 
 function sqlPanel(profile: RequestProfile, slowQueryThreshold: number): string {
@@ -118,11 +191,32 @@ function sqlPanel(profile: RequestProfile, slowQueryThreshold: number): string {
       ].join('');
       return `<div class="event">
         <div class="head"><span class="num">${index + 1}.</span>${meta}<span class="dur ${slow ? 'slow' : ''}">${formatMs(query.durationMs)}</span></div>
-        <pre>${esc(query.sql ?? '(no SQL captured)')}</pre>
+        <pre class="sql-text" data-sql="${esc(query.sql ?? '')}">${esc(query.sql ?? '(no SQL captured)')}</pre>
         ${query.params ? `<pre class="muted">params: ${esc(query.params)}</pre>` : ''}
       </div>`;
     })
     .join('');
+
+  // Format selector — reformats every captured statement client-side without a
+  // round-trip. Defaults to Pretty; Raw restores the query exactly as captured.
+  const toolbar = `<div class="sql-toolbar">
+    <span class="sql-toolbar-label">Format</span>
+    <select class="sql-format pager-size" aria-label="SQL format">
+      <option value="pretty" selected>Pretty</option>
+      <option value="compact">Compact</option>
+      <option value="raw">Raw</option>
+    </select>
+  </div>`;
+  const fmtScript = `<script>${SQL_FORMAT_JS}(function () {
+    var pres = [].slice.call(document.querySelectorAll('#sql-events pre.sql-text'));
+    var sels = [].slice.call(document.querySelectorAll('.sql-format'));
+    function apply(mode) {
+      pres.forEach(function (p) { p.textContent = window.__formatSql(p.getAttribute('data-sql') || '', mode); });
+      sels.forEach(function (s) { s.value = mode; });
+    }
+    sels.forEach(function (s) { s.addEventListener('change', function () { apply(s.value); }); });
+    apply('pretty');
+  })();</script>`;
 
   // Paginate the query list client-side so a heavy (e.g. N+1) request stays
   // navigable. All rows are rendered in the DOM — the JSON API and no-JS
@@ -130,7 +224,8 @@ function sqlPanel(profile: RequestProfile, slowQueryThreshold: number): string {
   // per-page selector re-slices instantly, no round-trip needed.
   const DEFAULT_PAGE_SIZE = 25;
   const MIN_PAGE_SIZE = 5;
-  if (profile.sql.length <= MIN_PAGE_SIZE) return `${summary}${alerts}<div id="sql-events">${items}</div>`;
+  if (profile.sql.length <= MIN_PAGE_SIZE)
+    return `${summary}${alerts}${toolbar}<div id="sql-events">${items}</div>${fmtScript}`;
 
   const sizeOptions = [10, 25, 50, 100]
     .map((n) => `<option value="${n}"${n === DEFAULT_PAGE_SIZE ? ' selected' : ''}>${n} per page</option>`)
@@ -172,7 +267,7 @@ function sqlPanel(profile: RequestProfile, slowQueryThreshold: number): string {
     render();
   })();</script>`;
 
-  return `${summary}${alerts}<div id="sql-events">${items}</div>${pager}${script}`;
+  return `${summary}${alerts}${toolbar}<div id="sql-events">${items}</div>${pager}${script}${fmtScript}`;
 }
 
 function redisPanel(profile: RequestProfile): string {
@@ -261,6 +356,7 @@ export function renderDetailPage(
   slowQueryThreshold: number,
 ): string {
   const isSocket = profile.kind === 'socket';
+  const isJob = profile.kind === 'job';
 
   const commonPanels: Array<[string, string]> = [
     ['Timeline', timelinePanel(profile)],
@@ -273,12 +369,14 @@ export function renderDetailPage(
   ];
   const panels: Array<[string, string]> = isSocket
     ? [...commonPanels, ['Socket', socketPanel(profile)]]
-    : [
-        ...commonPanels,
-        ['Headers', jsonBlock(profile.headers)],
-        ['Body', jsonBlock(profile.body)],
-        ['Response', jsonBlock(profile.responseBody)],
-      ];
+    : isJob
+      ? [...commonPanels, ['Job', jobPanel(profile)]]
+      : [
+          ...commonPanels,
+          ['Headers', jsonBlock(profile.headers)],
+          ['Body', jsonBlock(profile.body)],
+          ['Response', jsonBlock(profile.responseBody)],
+        ];
 
   const counts: Record<string, number> = {
     SQL: profile.sql.length,
@@ -314,19 +412,33 @@ export function renderDetailPage(
            ? ` <span class="muted" style="font-size:14px">on ${esc(profile.socket.namespace)}</span>`
            : ''
        }`
-    : `<span class="badge m-${esc(profile.method)}">${esc(profile.method)}</span>
+    : isJob
+      ? `<span class="badge m-JOB">JOB</span>
+         ${esc(profile.job?.jobName ?? '')}${
+           profile.job?.queue
+             ? ` <span class="muted" style="font-size:14px">on ${esc(profile.job.queue)}</span>`
+             : ''
+         }`
+      : `<span class="badge m-${esc(profile.method)}">${esc(profile.method)}</span>
        ${esc(profile.url)}`;
-  const idLabel = isSocket ? 'Event ID' : 'Request ID';
+  const idLabel = isSocket ? 'Event ID' : isJob ? 'Run ID' : 'Request ID';
 
-  const backView = isSocket ? 'sockets' : 'requests';
-  const topbar = `<a class="crumb" href="/${esc(routePrefix)}#/${backView}">← ${isSocket ? 'Sockets' : 'Requests'}</a><span class="muted" style="margin:0 4px">/</span><h1 style="font-size:14px">${idLabel} ${esc(String(profile.id).slice(0, 8))}</h1>`;
+  const backView = isSocket ? 'sockets' : isJob ? 'jobs' : 'requests';
+  const backLabel = isSocket ? 'Sockets' : isJob ? 'Jobs' : 'Requests';
+  const topbar = `<a class="crumb" href="/${esc(routePrefix)}#/${backView}">← ${backLabel}</a><span class="muted" style="margin:0 4px">/</span><h1 style="font-size:14px">${idLabel} ${esc(String(profile.id).slice(0, 8))}</h1>`;
+
+  const overviewCardsHtml = isSocket
+    ? socketOverviewCards(profile)
+    : isJob
+      ? jobOverviewCards(profile)
+      : overviewCards(profile);
 
   const body = `
   <h2 style="margin:2px 0 4px; font-size: 18px;">
     ${heading}
   </h2>
-  ${!isSocket && profile.route ? `<div class="muted">route: ${esc(profile.route)}</div>` : ''}
-  ${isSocket ? socketOverviewCards(profile) : overviewCards(profile)}
+  ${profile.kind === undefined || profile.kind === 'http' ? (profile.route ? `<div class="muted">route: ${esc(profile.route)}</div>` : '') : ''}
+  ${overviewCardsHtml}
   <table class="kv">
     <tr><td>${idLabel}</td><td>${esc(profile.id)}</td></tr>
     <tr><td>Started</td><td>${esc(profile.startedAt)}</td></tr>
@@ -358,6 +470,8 @@ export function renderDetailPage(
 
   const title = isSocket
     ? `nest-debug-panel — ${profile.socket?.event ?? 'socket'}`
-    : `nest-debug-panel — ${profile.method} ${profile.url}`;
+    : isJob
+      ? `nest-debug-panel — ${profile.job?.jobName ?? 'job'}`
+      : `nest-debug-panel — ${profile.method} ${profile.url}`;
   return layout(title, body, { routePrefix, active: backView, topbar });
 }

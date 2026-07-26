@@ -13,6 +13,22 @@ export const HTTP_CODE_METADATA = '__httpCode__';
 /** Nest's own metadata key for @SubscribeMessage() (the socket event name). */
 export const SOCKET_MESSAGE_METADATA = 'message';
 
+/** Nest's own metadata key for @MessagePattern()/@EventPattern() (microservices). */
+export const RPC_PATTERN_METADATA = 'microservices:pattern';
+
+/** @nestjs/bullmq processor metadata key (holds `{ name: queueName }`). */
+export const BULLMQ_PROCESSOR_METADATA = 'bullmq:processor_metadata';
+
+/** Metadata key set by the @TrackJob() decorator. */
+export const TRACK_JOB_METADATA = 'nest-debug-panel:track-job';
+
+/** @nestjs/schedule method-metadata keys (stable public constants). */
+export const SCHEDULE_METADATA_KEYS = [
+  'SCHEDULE_CRON_OPTIONS',
+  'SCHEDULE_INTERVAL_OPTIONS',
+  'SCHEDULE_TIMEOUT_OPTIONS',
+] as const;
+
 /** Nest's own metadata key for controller paths (used to re-prefix the debug controller). */
 export const PATH_METADATA = 'path';
 
@@ -24,3 +40,13 @@ export const DEFAULT_ROUTE_PREFIX = '__debug';
  * boolean it overrides both `forRoot({ enabled })` and the `NODE_ENV` default.
  */
 export const ENABLED_ENV_VAR = 'NEST_DEBUG_PANEL_ENABLED';
+
+/**
+ * Env var that selects the storage driver (`redis` | `memory`). When set it
+ * overrides the string `storage` option (a `DebugStorage` instance passed in
+ * code still wins). `redis` connects via {@link REDIS_URL_ENV_VARS}.
+ */
+export const STORAGE_ENV_VAR = 'NEST_DEBUG_PANEL_STORAGE';
+
+/** Env vars checked (in order) for the Redis connection string. */
+export const REDIS_URL_ENV_VARS = ['NEST_DEBUG_PANEL_REDIS_URL', 'REDIS_URL'] as const;

@@ -17,6 +17,7 @@ export * from './interfaces/plugin.interface';
 
 // Storage drivers
 export { MemoryStorage } from './storage/memory.storage';
+export { RedisStorage, RedisStorageOptions, RedisClientLike } from './storage/redis.storage';
 
 // Analysis
 export { analyzeSql, normalizeSql, SqlAnalyzerOptions } from './analysis/sql-analyzer';
@@ -24,6 +25,10 @@ export { analyzeSql, normalizeSql, SqlAnalyzerOptions } from './analysis/sql-ana
 // Decorators
 export { DebugIgnore } from './decorators/debug-ignore.decorator';
 export { TrackSocketEvents } from './decorators/track-socket.decorator';
+export { TrackJob, TrackJobOptions } from './decorators/track-job.decorator';
+
+// Background jobs
+export { JobTracker, trackJob } from './discovery/job-tracker.service';
 
 // Plugins & adapters
 export { MemoryPlugin } from './plugins/memory/memory.plugin';

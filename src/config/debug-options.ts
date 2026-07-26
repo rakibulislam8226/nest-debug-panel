@@ -47,6 +47,16 @@ export interface DebugModuleOptions {
    * whenever a WebSocket context is seen. Default true. Set false to disable.
    */
   sockets?: boolean;
+  /**
+   * Capture background-job / message / scheduled runs as their own profiles,
+   * with any SQL/Redis/HTTP they run. Auto-detected across the DI container —
+   * BullMQ (`@nestjs/bullmq`), legacy `@nestjs/bull`, `@nestjs/microservices`
+   * consumers, `@nestjs/schedule`, and DI-provided bee-queue/Agenda/pg-boss —
+   * with no extra setup. Default true. Set false to disable.
+   */
+  jobs?: boolean;
+  /** Capture the job payload (`job.data`), redacted. Default true. */
+  captureJobData?: boolean;
   /** Queries at/above this (ms) are flagged slow. Default 100. */
   slowQueryThreshold?: number;
   /** Requests at/above this (ms) are flagged slow. Default 500. */
@@ -70,7 +80,19 @@ export interface DebugModuleOptions {
   getUser?: (request: unknown) => unknown;
   /** Gate access to the debug API/UI (e.g. only admins). */
   authorize?: (request: unknown) => boolean | Promise<boolean>;
-  /** Storage driver. Default: in-memory ring buffer. */
+  /**
+   * Storage driver. Default: in-memory ring buffer.
+   *
+   * To share captures across processes (an API + a separate worker), set the
+   * `NEST_DEBUG_PANEL_STORAGE=redis` env var — no code change needed. It switches
+   * to a shared Redis store (connecting via `NEST_DEBUG_PANEL_REDIS_URL` or
+   * `REDIS_URL`) and falls back to in-memory, with a warning, if Redis is
+   * unavailable.
+   *
+   * Pass a `DebugStorage` instance here only for a custom driver (e.g. the
+   * exported `RedisStorage` with your own client) — it takes precedence over the
+   * env var.
+   */
   storage?: DebugStorage;
   /** Profiling plugins (Prisma, Redis, Axios, custom, ...). */
   plugins?: DebugPlugin[];
@@ -90,6 +112,8 @@ export interface ResolvedDebugOptions {
   captureHttp: boolean;
   captureLogs: boolean;
   captureSockets: boolean;
+  captureJobs: boolean;
+  captureJobData: boolean;
   slowQueryThreshold: number;
   slowRequestThreshold: number;
   nPlusOneThreshold: number;
@@ -138,6 +162,8 @@ export function resolveDebugOptions(options: DebugModuleOptions = {}): ResolvedD
     captureHttp: options.captureHttp ?? true,
     captureLogs: options.captureLogs ?? true,
     captureSockets: options.sockets ?? true,
+    captureJobs: options.jobs ?? true,
+    captureJobData: options.captureJobData ?? true,
     slowQueryThreshold: options.slowQueryThreshold ?? 100,
     slowRequestThreshold: options.slowRequestThreshold ?? 500,
     nPlusOneThreshold: options.nPlusOneThreshold ?? 5,

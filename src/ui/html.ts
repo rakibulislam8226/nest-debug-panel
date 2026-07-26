@@ -133,6 +133,7 @@ export const BASE_STYLES = `
   .m-PUT, .m-PATCH { background: #4a3a1f; color: #e2c57e; }
   .m-DELETE { background: #4a1f1f; color: #ff9e9e; }
   .m-WS { background: #3a1f4a; color: #d79eff; }
+  .m-JOB { background: #143a44; color: #7fd3e6; }
   .m-OTHER { background: var(--panel2); color: var(--muted); }
   .lvl { display: inline-block; padding: 2px 8px; border-radius: 5px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
   .lvl-error { background: rgba(248,81,73,0.15); color: var(--err); }
@@ -205,6 +206,18 @@ export const BASE_STYLES = `
   .tl-track { position: relative; height: 20px; }
   .tl-bar { position: absolute; top: 3px; height: 14px; border-radius: 3px; min-width: 3px; opacity: 0.9; }
   .tl-label { position: absolute; left: 0; top: 0; font-size: 12px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; padding-left: 2px; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+  .tl-sql-row { cursor: pointer; }
+  .tl-sql-row:hover .tl-label, .tl-sql-row.open .tl-label { color: var(--accent); }
+  .tl-detail { display: none; padding: 2px 16px 12px 114px; }
+  .tl-detail.open { display: block; }
+  .tl-detail pre { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; font: 12px/1.6 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-word; color: #c9d1d9; }
+  .fmt { display: flex; gap: 6px; margin: 6px 0 8px; }
+  .fmt-btn { background: var(--panel2); color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 3px 12px; font-size: 12px; cursor: pointer; }
+  .fmt-btn:hover { border-color: var(--accent); }
+  .fmt-btn.active { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 600; }
+  .sql-toolbar { display: flex; align-items: center; gap: 10px; margin: 4px 0 14px; }
+  .sql-toolbar-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  @media (max-width: 720px) { .tl-detail { padding-left: 16px; } }
   .k-request { background: var(--accent); } .k-response { background: var(--accent); }
   .k-sql { background: var(--ok); } .k-redis { background: var(--err); }
   .k-http { background: var(--info); } .k-custom { background: var(--warn); }
@@ -303,6 +316,8 @@ const NAV_ICONS: Record<string, string> = {
     '<svg viewBox="0 0 24 24"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>',
   sockets:
     '<svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>',
+  jobs:
+    '<svg viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>',
   queries:
     '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>',
   logs:
@@ -324,6 +339,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'overview', label: 'Overview' },
   { key: 'requests', label: 'Requests' },
   { key: 'sockets', label: 'Sockets' },
+  { key: 'jobs', label: 'Jobs' },
   { key: 'queries', label: 'Queries' },
   { key: 'logs', label: 'Logs' },
   { key: 'exceptions', label: 'Exceptions', hot: true },
@@ -403,16 +419,18 @@ export function layout(title: string, body: string, opts: LayoutOptions): string
  * count badges. One definition keeps the count keys in a single place.
  */
 export const NAV_COUNTS_FN = `function applyNavCounts(summaries) {
-  var http = 0, sock = 0, sql = 0, log = 0, exc = 0, slow = 0;
+  var http = 0, sock = 0, job = 0, sql = 0, log = 0, exc = 0, slow = 0;
   for (var i = 0; i < summaries.length; i++) {
     var s = summaries[i];
-    if (s.kind === 'socket') sock++; else http++;
+    if (s.kind === 'socket') sock++;
+    else if (s.kind === 'job') job++;
+    else http++;
     sql += s.sqlCount || 0;
     log += s.logCount || 0;
     if (s.hasException) exc++;
     if (s.slow) slow++;
   }
-  var map = { requests: http, sockets: sock, queries: sql, logs: log, exceptions: exc, slow: slow };
+  var map = { requests: http, sockets: sock, jobs: job, queries: sql, logs: log, exceptions: exc, slow: slow };
   var els = document.querySelectorAll('.nav-count');
   for (var j = 0; j < els.length; j++) {
     var key = els[j].getAttribute('data-count');
@@ -422,6 +440,65 @@ export const NAV_COUNTS_FN = `function applyNavCounts(summaries) {
     if (els[j].classList.contains('hot-count')) els[j].classList.toggle('hot', n > 0);
   }
   return map;
+}`;
+
+/**
+ * Client-side SQL pretty-printer, emitted verbatim into the detail page and
+ * shared by the timeline expander and the SQL-tab format selector. Defines
+ * `window.__formatSql(sql, mode)` once (guarded), where mode is one of:
+ *   'raw'     — the query exactly as captured
+ *   'compact' — whitespace collapsed to a single line
+ *   'pretty'  — major clauses and top-level columns broken onto their own lines
+ * Quote- and paren-aware so keywords/commas inside string literals, identifiers
+ * or function calls are never split.
+ */
+export const SQL_FORMAT_JS = `if (!window.__formatSql) {
+  var __SQL_KW = ['SELECT','FROM','WHERE','GROUP BY','ORDER BY','HAVING','LIMIT','OFFSET','RETURNING','VALUES','SET','UNION ALL','UNION','LEFT JOIN','RIGHT JOIN','INNER JOIN','FULL JOIN','CROSS JOIN','JOIN','INSERT INTO','UPDATE','DELETE FROM','ON CONFLICT'];
+  window.__formatSql = function (sql, mode) {
+    var raw = sql == null ? '' : String(sql);
+    if (mode === 'raw') return raw;
+    var s = raw.replace(/\\s+/g, ' ').trim();
+    if (mode === 'compact') return s;
+    function kwAt(pos) {
+      for (var k = 0; k < __SQL_KW.length; k++) {
+        var w = __SQL_KW[k];
+        if (s.substr(pos, w.length).toUpperCase() === w) {
+          var before = pos === 0 ? ' ' : s.charAt(pos - 1);
+          var after = pos + w.length >= s.length ? ' ' : s.charAt(pos + w.length);
+          if (/[\\s(]/.test(before) && /[\\s(]/.test(after)) return w;
+        }
+      }
+      return null;
+    }
+    var out = '', i = 0, depth = 0, quote = null;
+    while (i < s.length) {
+      var c = s.charAt(i);
+      if (quote) { out += c; if (c === quote) quote = null; i++; continue; }
+      if (c === '"' || c === "'") { quote = c; out += c; i++; continue; }
+      if (c === '(') { depth++; out += c; i++; continue; }
+      if (c === ')') { depth = depth > 0 ? depth - 1 : 0; out += c; i++; continue; }
+      if (depth === 0) {
+        var w = kwAt(i);
+        if (w) {
+          out = out.replace(/[ \\t]+$/, '');
+          if (out && out.charAt(out.length - 1) !== '\\n') out += '\\n';
+          out += s.substr(i, w.length).toUpperCase() + ' ';
+          i += w.length;
+          if (s.charAt(i) === ' ') i++;
+          continue;
+        }
+        if (c === ',') {
+          out = out.replace(/[ \\t]+$/, '') + ',\\n  ';
+          i++;
+          if (s.charAt(i) === ' ') i++;
+          continue;
+        }
+      }
+      out += c;
+      i++;
+    }
+    return out.replace(/[ \\t]+$/gm, '').trim();
+  };
 }`;
 
 export { SEARCH_ICON };
