@@ -80,7 +80,19 @@ export interface DebugModuleOptions {
   getUser?: (request: unknown) => unknown;
   /** Gate access to the debug API/UI (e.g. only admins). */
   authorize?: (request: unknown) => boolean | Promise<boolean>;
-  /** Storage driver. Default: in-memory ring buffer. */
+  /**
+   * Storage driver. Default: in-memory ring buffer.
+   *
+   * To share captures across processes (an API + a separate worker), set the
+   * `NEST_DEBUG_PANEL_STORAGE=redis` env var — no code change needed. It switches
+   * to a shared Redis store (connecting via `NEST_DEBUG_PANEL_REDIS_URL` or
+   * `REDIS_URL`) and falls back to in-memory, with a warning, if Redis is
+   * unavailable.
+   *
+   * Pass a `DebugStorage` instance here only for a custom driver (e.g. the
+   * exported `RedisStorage` with your own client) — it takes precedence over the
+   * env var.
+   */
   storage?: DebugStorage;
   /** Profiling plugins (Prisma, Redis, Axios, custom, ...). */
   plugins?: DebugPlugin[];

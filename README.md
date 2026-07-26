@@ -85,7 +85,12 @@ Socket events appear in the **same list** as HTTP requests, tagged with a `WS` b
 
 ## Background jobs
 
-Background work is captured the same way as requests — **install the package, `DebugModule.forRoot()`, done.** No annotations, no per-queue wiring. Each run becomes its own profile with everything it did (SQL/Redis/HTTP, N+1, timeline, exceptions), plus the queue, job name, id, attempt, payload (redacted) and return value. Runs appear in the **Jobs** monitor.
+Background work is captured the same way as requests — no annotations, no per-queue wiring. Each run becomes its own profile with everything it did (SQL/Redis/HTTP, N+1, timeline, exceptions), plus the queue, job name, id, attempt, payload (redacted) and return value. Runs appear in the **Jobs** monitor.
+
+**Setup depends on your process layout:**
+
+- **Jobs run in the same process as the panel** (e.g. everything under one `npm start`): nothing to do — `DebugModule.forRoot()` is all you need, and jobs show up right next to requests and sockets.
+- **Jobs run in a separate worker process** (the common production layout — an API process and a dedicated worker, e.g. a `worker.module.ts` bootstrapped by its own `main.ts`/`worker.ts`): a NestJS module tree is only instrumented in the process that actually loads it, so **`DebugModule.forRoot()` must be imported in the worker's own root module too** — not just the API's. Adding it there does not require an HTTP server; a standalone `NestFactory.createApplicationContext(WorkerModule)` bootstrap works fine. Once both processes load it, set `NEST_DEBUG_PANEL_STORAGE=redis` in **both** and one panel shows requests, sockets and jobs together — one env var on top of the import, using the Redis you already run for BullMQ (full setup just below in [Multi-process apps](#multi-process-apps-api--worker)).
 
 What's captured automatically, with **zero extra code**:
 
@@ -112,6 +117,40 @@ new Worker('emails', (job) =>
   trackJob({ library: 'bullmq', queue: 'emails', jobName: job.name }, () => doWork(job), job.data),
 );
 ```
+
+## Multi-process apps (API + worker)
+
+Most production NestJS apps run the HTTP API and the BullMQ worker as **two separate processes** (e.g. `src/main.ts` bootstrapping `AppModule`, and a separate `src/worker.ts` bootstrapping `WorkerModule`). Getting this right needs **two things**, and missing either one is the most common reason the Jobs list looks empty:
+
+**1. Import `DebugModule.forRoot()` in *every* process's own root module — including the worker's.** The panel only instruments the module tree it's actually loaded into. If your worker's root module (e.g. `WorkerModule`) never imports it, nothing in that process is ever wrapped, no matter what else you configure. This is true even when the worker has no HTTP server — `DebugModule.forRoot()` works the same inside a standalone `NestFactory.createApplicationContext(...)` bootstrap:
+
+```ts
+// worker.module.ts — the worker's OWN root module, separate from AppModule
+import { Module } from '@nestjs/common';
+import { DebugModule } from 'nest-debug-panel';
+
+@Module({
+  imports: [
+    DebugModule.forRoot(),
+    // ...your BullMQ / processor modules
+  ],
+})
+export class WorkerModule {}
+```
+
+**2. Point both processes at the same Redis**, so the API's panel can see what the worker captured — each process still has its own in-memory store by default, and in-memory is never shared across processes. Set the same environment variable in **both**:
+
+```bash
+NEST_DEBUG_PANEL_STORAGE=redis    # shared Redis store (reads NEST_DEBUG_PANEL_REDIS_URL, or REDIS_URL)
+# (unset, or =memory)             # default: in-memory, per-process
+```
+
+You already run Redis for BullMQ, so there's nothing new to install. With both pieces in place — the import in the worker's module, and the env var in both processes — one panel shows requests, sockets **and** the worker's jobs together.
+
+- The connection comes from `NEST_DEBUG_PANEL_REDIS_URL` or `REDIS_URL`; if you configure Redis in parts instead, it's built from `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` / `REDIS_DB` — so most apps need no new variable at all.
+- **Fail-safe:** if Redis or the URL is missing, it falls back to in-memory with a warning — it never breaks boot.
+- The **worker doesn't need to serve HTTP** — it just writes captures to Redis; the API process serves the panel and reads them back.
+- **Single-process app** (everything under one `npm start`)? You don't need any of this — the default in-memory store already shows jobs alongside requests.
 
 ## Database, Redis and HTTP capture is automatic
 
@@ -160,7 +199,7 @@ DebugModule.forRoot({
   maxBodyLength: 65536,         // bytes kept per captured body
   getUser: (req) => (req as any).user,
   authorize: (req) => true,     // gate the dashboard, e.g. admins only
-  storage: undefined,           // custom storage driver; default is in-memory
+  storage: undefined,           // custom DebugStorage instance; mode is set via NEST_DEBUG_PANEL_STORAGE
   plugins: [],
 });
 ```
@@ -327,14 +366,10 @@ Build your own frontend or tooling on top of it if you like.
 
 ## Storage
 
-The default store is an in-memory ring buffer that keeps the latest `maxRequests` profiles. Need persistence or sharing across instances? Implement the five-method `DebugStorage` interface and pass it in:
+The default store is an in-memory ring buffer that keeps the latest `maxRequests` profiles — perfect for a single-process app.
 
-```ts
-class RedisStorage implements DebugStorage {
-  save(profile) { ... } find(id) { ... } list() { ... } clear() { ... } count() { ... }
-}
-DebugModule.forRoot({ storage: new RedisStorage(client) });
-```
+- **Running an API + worker as separate processes?** Set `NEST_DEBUG_PANEL_STORAGE=redis` so one panel shows everything — see [Multi-process apps (API + worker)](#multi-process-apps-api--worker).
+- **Bringing your own driver?** Implement the five-method `DebugStorage` interface (`save`/`find`/`list`/`clear`/`count`) and pass it as `storage` — a database or file store works the same way.
 
 ## Example app
 

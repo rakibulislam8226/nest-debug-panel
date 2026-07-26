@@ -17,6 +17,7 @@ export * from './interfaces/plugin.interface';
 
 // Storage drivers
 export { MemoryStorage } from './storage/memory.storage';
+export { RedisStorage, RedisStorageOptions, RedisClientLike } from './storage/redis.storage';
 
 // Analysis
 export { analyzeSql, normalizeSql, SqlAnalyzerOptions } from './analysis/sql-analyzer';

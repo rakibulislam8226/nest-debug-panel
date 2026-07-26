@@ -62,6 +62,15 @@ export class JobTracker implements OnApplicationBootstrap, OnModuleDestroy {
     // Release the process-wide handle so `trackJob()` never routes into a
     // torn-down tracker after shutdown (matters for tests / hot reload).
     if (activeTracker === this) activeTracker = undefined;
+    // Close a Redis connection the store opened itself (NEST_DEBUG_PANEL_STORAGE=redis).
+    const store = this.storage as { disconnect?: () => Promise<void> | void };
+    if (typeof store.disconnect === 'function') {
+      try {
+        void store.disconnect();
+      } catch {
+        /* best-effort */
+      }
+    }
   }
 
   /** The capture primitive. Runs `handler` inside a fresh job profile context. */

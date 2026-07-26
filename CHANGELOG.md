@@ -29,6 +29,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `captureJobData: false`. For workers outside Nest's DI (or legacy `@nestjs/bull`)
   the exported `@TrackJob()` decorator and `trackJob()` helper capture a handler in
   one line. No new dependency is added.
+- **Shared Redis storage for multi-process apps — via `NEST_DEBUG_PANEL_STORAGE`.**
+  When your API and BullMQ worker run as separate processes, each only sees its
+  own in-memory captures, so the API's panel can't show the worker's jobs. Set
+  `NEST_DEBUG_PANEL_STORAGE=redis` in both processes and a single panel shows
+  everything — requests, socket events and the worker's jobs — with **no code
+  change** (storage defaults to in-memory). It connects via
+  `NEST_DEBUG_PANEL_REDIS_URL` (or `REDIS_URL`, or discrete
+  `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD`/`REDIS_DB`), reusing the Redis BullMQ
+  already needs, and **falls back to in-memory with a warning** if Redis is unavailable —
+  never breaking boot. Advanced: a `RedisStorage` driver is also exported for
+  code-level control (pass an existing ioredis `client`, or a `url`; configurable
+  `prefix`, `maxRequests`, `ttlSeconds`), and any custom `DebugStorage` instance
+  passed to `forRoot()` still takes precedence over the env var.
 - **SQL formatting in the dashboard.** Click a SQL row in the request **Timeline**
   to expand the full statement, pretty-printed. The **SQL** tab gains a
   Pretty / Compact / Raw format selector that reformats every captured query

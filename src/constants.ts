@@ -40,3 +40,13 @@ export const DEFAULT_ROUTE_PREFIX = '__debug';
  * boolean it overrides both `forRoot({ enabled })` and the `NODE_ENV` default.
  */
 export const ENABLED_ENV_VAR = 'NEST_DEBUG_PANEL_ENABLED';
+
+/**
+ * Env var that selects the storage driver (`redis` | `memory`). When set it
+ * overrides the string `storage` option (a `DebugStorage` instance passed in
+ * code still wins). `redis` connects via {@link REDIS_URL_ENV_VARS}.
+ */
+export const STORAGE_ENV_VAR = 'NEST_DEBUG_PANEL_STORAGE';
+
+/** Env vars checked (in order) for the Redis connection string. */
+export const REDIS_URL_ENV_VARS = ['NEST_DEBUG_PANEL_REDIS_URL', 'REDIS_URL'] as const;
