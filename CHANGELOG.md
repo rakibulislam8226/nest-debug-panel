@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Deleting an ignore rule failed on Fastify.** The dashboard set
+  `content-type: application/json` on every rule request, including the body-less
+  `DELETE`; Fastify rejects an empty body sent with that content-type, so the
+  request came back `400 Body cannot be empty when content-type is set to
+  'application/json'` while adding and updating (which do send a body) worked. The
+  header is now only sent when there is a body. Express was unaffected, which is
+  why it only showed up on a Fastify app.
+
 ## [1.2.0] - 2026-07-30
 
 ### Added

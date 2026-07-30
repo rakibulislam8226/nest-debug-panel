@@ -519,9 +519,14 @@ const CLIENT_SCRIPT = `(function () {
       if (qs.length) full += (url.indexOf('?') >= 0 ? '&' : '?') + qs.join('&');
     }
     ignoreError('');
+    // Only declare a JSON content-type when there really is a body. Fastify
+    // rejects an empty body sent with 'application/json' outright, which would
+    // break DELETE (a body-less request) while add and update kept working.
+    var headers = { accept: 'application/json' };
+    if (body) headers['content-type'] = 'application/json';
     fetch(full, {
       method: method,
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      headers: headers,
       body: body ? JSON.stringify(body) : undefined
     })
       .then(function (r) { return r.json().catch(function () { return { ok: r.ok }; }); })
