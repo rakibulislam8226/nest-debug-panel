@@ -37,6 +37,7 @@ export {
 export { DebugIgnore } from './decorators/debug-ignore.decorator';
 export { TrackSocketEvents } from './decorators/track-socket.decorator';
 export { TrackJob, TrackJobOptions } from './decorators/track-job.decorator';
+export { SkipThrottling } from './decorators/skip-throttling.decorator';
 
 // Background jobs
 export { JobTracker, trackJob } from './discovery/job-tracker.service';

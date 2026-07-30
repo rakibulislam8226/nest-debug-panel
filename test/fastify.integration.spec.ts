@@ -100,4 +100,57 @@ describe('DebugModule on Fastify', () => {
       .expect('content-type', /text\/html/);
     expect(page.text).toContain('nest');
   });
+
+  // Fastify parses bodies and writes responses differently from Express, and the
+  // rule endpoints are the only ones that read a body — so they get their own
+  // pass on this adapter rather than relying on the Express suite.
+  it('manages ignore rules through Fastify', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/__debug/filters')
+      .send({ pattern: '/users', note: 'noisy' })
+      .expect(200);
+    expect(created.body).toMatchObject({ ok: true, rule: { pattern: '/users' } });
+    const id = created.body.rule.id as string;
+
+    // The rule takes effect: this request is no longer captured.
+    await request(app.getHttpServer()).get('/users').expect(200);
+    const feed = await request(app.getHttpServer())
+      .get('/__debug?feed=filters')
+      .set('accept', 'application/json')
+      .expect(200);
+    expect(feed.body.rules[0]).toMatchObject({ pattern: '/users' });
+    expect(await summaries()).toHaveLength(0);
+
+    await request(app.getHttpServer())
+      .patch(`/__debug/filters/${id}`)
+      .send({ enabled: false })
+      .expect(200);
+    await request(app.getHttpServer()).get('/users').expect(200);
+    expect(await summaries()).toHaveLength(1);
+
+    await request(app.getHttpServer()).delete(`/__debug/filters/${id}`).expect(200);
+    const empty = await request(app.getHttpServer())
+      .get('/__debug?feed=filters')
+      .set('accept', 'application/json')
+      .expect(200);
+    expect(empty.body.rules).toHaveLength(0);
+  });
+
+  it('rejects a bad rule with 400 through Fastify', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/__debug/filters')
+      .send({ pattern: '/' })
+      .expect(400)
+      .expect('content-type', /application\/json/);
+    expect(res.body).toMatchObject({ ok: false });
+    expect(res.body.error).toBeTruthy();
+  });
+
+  async function summaries(): Promise<unknown[]> {
+    const res = await request(app.getHttpServer())
+      .get('/__debug')
+      .set('accept', 'application/json')
+      .expect(200);
+    return res.body as unknown[];
+  }
 });

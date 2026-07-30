@@ -11,6 +11,8 @@ import {
   compileIgnoreMatcher,
 } from '../src/utils/ignore-match';
 import type { RequestSummary } from '../src/interfaces/profile.interface';
+import type { IgnoreRule } from '../src/interfaces/ignore-rule.interface';
+import type { DebugStorage } from '../src/interfaces/storage.interface';
 
 @Controller()
 class AppController {
@@ -120,13 +122,17 @@ describe('runtime ignore rules', () => {
     expect((await summaries(app)).map((s) => s.url)).toContain('/health');
   });
 
-  it('counts what each rule skipped so a rule can be seen working', async () => {
+  it('records nothing when it skips a request', async () => {
     const added = await rules.add({ pattern: '/health' });
+    const before = JSON.stringify(rules.list());
+
     await request(app.getHttpServer()).get('/health').expect(200);
     await request(app.getHttpServer()).get('/health/db').expect(200);
 
-    const listed = rules.list().find((rule) => rule.id === added.rule!.id);
-    expect(listed?.hits).toBe(2);
+    // Matching is the end of it — no counters, no writes, nothing to grow.
+    expect(JSON.stringify(rules.list())).toBe(before);
+    expect(rules.list().find((rule) => rule.id === added.rule!.id)).not.toHaveProperty('hits');
+    expect(await summaries(app)).toHaveLength(0);
   });
 
   it('honours a disabled rule without forgetting it', async () => {
@@ -180,6 +186,57 @@ describe('runtime ignore rules', () => {
     const second = await bootstrap({ storage });
     expect(second.rules.list().map((rule) => rule.pattern)).toEqual(['/health']);
     await second.app.close();
+  });
+
+  it('does no periodic work when the store is process-local', async () => {
+    await app.close();
+    const setIntervalSpy = jest.spyOn(global, 'setInterval');
+    ({ app, rules } = await bootstrap());
+
+    // Nothing else can write to a MemoryStorage, so there is nothing to poll for.
+    expect(setIntervalSpy.mock.calls.filter((call) => call[1] === 15_000)).toHaveLength(0);
+    setIntervalSpy.mockRestore();
+  });
+
+  it('polls a shared store, and picks up another instance’s rule', async () => {
+    await app.close();
+    let stored: IgnoreRule[] = [];
+    const shared: DebugStorage = {
+      ...new MemoryStorage(50),
+      sharedIgnoreRules: true,
+      loadIgnoreRules: () => stored,
+      saveIgnoreRules: (next) => {
+        stored = next;
+      },
+      save: () => {},
+      find: () => undefined,
+      list: () => [],
+      clear: () => {},
+      count: () => 0,
+    };
+
+    jest.useFakeTimers();
+    try {
+      ({ app, rules } = await bootstrap({ storage: shared }));
+      expect(rules.list()).toHaveLength(0);
+
+      // Another process adds a rule straight into the shared store.
+      stored = [
+        {
+          id: 'from-elsewhere',
+          pattern: '/health',
+          enabled: true,
+          createdAt: new Date(0).toISOString(),
+          source: 'runtime',
+        },
+      ];
+      expect(rules.list()).toHaveLength(0); // not seen until the next tick
+
+      await jest.advanceTimersByTimeAsync(15_000);
+      expect(rules.list().map((rule) => rule.pattern)).toEqual(['/health']);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('keeps rules when history is cleared', async () => {

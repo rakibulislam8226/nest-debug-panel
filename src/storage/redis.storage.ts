@@ -146,6 +146,8 @@ export class RedisStorage implements DebugStorage {
    * captures, so they outlive both the profiles and a restart, and `clear()`
    * leaves them alone.
    */
+  readonly sharedIgnoreRules = true;
+
   async loadIgnoreRules(): Promise<IgnoreRule[]> {
     const raw = await this.client.get(this.ignoreKey);
     if (!raw) return [];

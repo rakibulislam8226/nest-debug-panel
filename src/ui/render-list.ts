@@ -410,7 +410,6 @@ const CLIENT_SCRIPT = `(function () {
       var id = escHtml(r.id);
       var meta = [];
       if (fromConfig) meta.push('set in code');
-      if (r.hits > 0) meta.push(r.hits + ' skipped');
       if (r.note) meta.push(escHtml(r.note));
       html += '<li class="rule' + (r.enabled ? '' : ' off') + '">'
         + '<div class="rule-main">'
@@ -529,9 +528,10 @@ const CLIENT_SCRIPT = `(function () {
       .then(function (d) {
         if (d && d.ok === false) { ignoreError(d.error || 'That did not work.'); return; }
         resetIgnoreForm();
-        // New rules only affect future requests, so the captured list is left as
-        // it is — refresh() just keeps the counts honest.
-        return loadIgnore().then(function () { lastSig = null; refresh(); });
+        // A rule only affects future requests, so the captured list can't have
+        // changed — reloading the rules is the one request this needs. The 2s
+        // poll picks up everything else on its own.
+        return loadIgnore();
       })
       .catch(function () { ignoreError('Request failed — is the app still running?'); });
   }
