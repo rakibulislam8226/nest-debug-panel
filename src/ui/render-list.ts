@@ -21,6 +21,7 @@ export function renderListPage(routePrefix: string): string {
       </div>
     </div>
   </div>
+  ${IGNORE_MODAL}
   <script>${CLIENT_SCRIPT.replace('__PREFIX__', esc(routePrefix))}</script>`;
 
   const topbar = `
@@ -28,17 +29,52 @@ export function renderListPage(routePrefix: string): string {
     <div class="search">${SEARCH_ICON}<input id="search" type="text" placeholder="Filter…" autocomplete="off" spellcheck="false"></div>
     <div class="spacer"></div>
     <button class="btn ghost" id="auto-btn" onclick="toggleAuto(this)">Auto-refresh: on</button>
+    <button class="btn ghost" id="ignore-btn" onclick="openIgnore()" title="Skip noisy endpoints like health checks">Ignored</button>
     <button class="btn ghost" onclick="refresh()">Refresh</button>
     <button class="btn danger" onclick="clearAll()">Clear</button>`;
 
   return layout('nest-debug-panel', body, { routePrefix, active: 'overview', topbar, spa: true });
 }
 
+/**
+ * The "Ignored endpoints" manager. A modal rather than a page: it's a settings
+ * dialog you open, adjust and dismiss, and keeping it in the SPA means the list
+ * behind it never has to reload.
+ *
+ * One form serves both add and edit — `submitIgnore()` decides which by whether
+ * a row is being edited — so there's a single input path to validate.
+ */
+const IGNORE_MODAL = `
+  <div class="modal-overlay" id="ignore-modal">
+    <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="ignore-title">
+      <div class="modal-head">
+        <h3 id="ignore-title">Ignored endpoints</h3>
+        <span class="tag" id="ignore-count"></span>
+      </div>
+      <p>Requests matching these patterns are never captured — use it for health checks, metrics scrapes and other traffic that would otherwise fill the buffer.</p>
+      <div id="ignore-form">
+        <div class="field-row">
+          <div class="grow"><input class="inp mono" id="ignore-pattern" type="text" placeholder="/health  or  /static/*" autocomplete="off" spellcheck="false"></div>
+          <div class="grow"><input class="inp" id="ignore-note" type="text" placeholder="Note (optional)" autocomplete="off"></div>
+          <button class="btn solid" id="ignore-submit" onclick="submitIgnore()">Add</button>
+          <button class="btn" id="ignore-cancel" style="display:none" onclick="cancelIgnoreEdit()">Cancel</button>
+        </div>
+        <p class="form-note"><code>/health</code> also covers <code>/health/db</code>. Use <code>*</code> to match anything: <code>/v1/*/ping</code>.</p>
+        <p class="form-err" id="ignore-error"></p>
+      </div>
+      <ul class="rule-list" id="ignore-list"></ul>
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="btn" onclick="closeIgnore()">Done</button>
+      </div>
+    </div>
+  </div>`;
+
 /** All client behavior. `__PREFIX__` is replaced with the route prefix. */
 const CLIENT_SCRIPT = `(function () {
   var PREFIX = '/__PREFIX__';
   var auto = true, filter = '', view = 'overview';
   var summaries = [], queries = null, queriesLoading = false, logs = null, logsLoading = false;
+  var ignoreRules = [], ignoreEditable = true, ignoreEditingId = null;
 
   var VIEWS = {
     overview:   { title: 'Overview',   search: false },
@@ -338,7 +374,169 @@ const CLIENT_SCRIPT = `(function () {
       .catch(function () { setLive(false, 'Disconnected'); });
   }
 
+  // ---- Ignored endpoints ----
+  function ignoreError(msg) {
+    var el = document.getElementById('ignore-error');
+    if (el) el.textContent = msg || '';
+  }
+
+  function paintIgnoreButton() {
+    var btn = document.getElementById('ignore-btn');
+    if (!btn) return;
+    var on = 0;
+    for (var i = 0; i < ignoreRules.length; i++) if (ignoreRules[i].enabled) on++;
+    btn.textContent = on > 0 ? 'Ignored · ' + on : 'Ignored';
+  }
+
+  function renderIgnore() {
+    paintIgnoreButton();
+    var count = document.getElementById('ignore-count');
+    if (count) count.textContent = ignoreRules.length ? ignoreRules.length + ' rule' + (ignoreRules.length === 1 ? '' : 's') : '';
+    // Read-only mode (runtimeIgnore: false) still lists config rules, so a
+    // missing request can be explained — it just hides the editing controls.
+    var form = document.getElementById('ignore-form');
+    if (form) form.style.display = ignoreEditable ? '' : 'none';
+
+    var list = document.getElementById('ignore-list');
+    if (!list) return;
+    if (!ignoreRules.length) {
+      list.innerHTML = '<li class="rule"><span class="muted">Nothing ignored yet — every request is captured.</span></li>';
+      return;
+    }
+    var html = '';
+    for (var j = 0; j < ignoreRules.length; j++) {
+      var r = ignoreRules[j];
+      var fromConfig = r.source === 'config';
+      var id = escHtml(r.id);
+      var meta = [];
+      if (fromConfig) meta.push('set in code');
+      if (r.hits > 0) meta.push(r.hits + ' skipped');
+      if (r.note) meta.push(escHtml(r.note));
+      html += '<li class="rule' + (r.enabled ? '' : ' off') + '">'
+        + '<div class="rule-main">'
+        + '<div class="rule-pattern">' + escHtml(r.pattern) + '</div>'
+        + (meta.length ? '<div class="rule-note">' + meta.join(' · ') + '</div>' : '')
+        + '</div>';
+      if (fromConfig || !ignoreEditable) {
+        html += '<span class="pill">read-only</span>';
+      } else {
+        html += '<label class="toggle" title="Turn this rule off without deleting it">'
+          + '<input type="checkbox"' + (r.enabled ? ' checked' : '') + ' onchange="toggleIgnore(\\'' + id + '\\', this.checked)"> on</label>'
+          + '<div class="rule-acts">'
+          + '<button class="btn mini" onclick="editIgnore(\\'' + id + '\\')">Edit</button>'
+          + '<button class="btn mini danger" onclick="deleteIgnore(\\'' + id + '\\')">Delete</button>'
+          + '</div>';
+      }
+      html += '</li>';
+    }
+    list.innerHTML = html;
+  }
+
+  function loadIgnore() {
+    return fetch(PREFIX + '?feed=filters', { headers: { accept: 'application/json' } })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        ignoreRules = (d && d.rules) || [];
+        ignoreEditable = !d || d.editable !== false;
+        renderIgnore();
+      })
+      .catch(function () { ignoreError('Could not load the rules.'); });
+  }
+
+  function ignoreFields() {
+    return {
+      pattern: document.getElementById('ignore-pattern'),
+      note: document.getElementById('ignore-note'),
+      submit: document.getElementById('ignore-submit'),
+      cancel: document.getElementById('ignore-cancel')
+    };
+  }
+
+  function resetIgnoreForm() {
+    var f = ignoreFields();
+    ignoreEditingId = null;
+    if (f.pattern) f.pattern.value = '';
+    if (f.note) f.note.value = '';
+    if (f.submit) f.submit.textContent = 'Add';
+    if (f.cancel) f.cancel.style.display = 'none';
+    ignoreError('');
+  }
+
   // ---- Global handlers (referenced from inline on* attributes) ----
+  window.openIgnore = function () {
+    resetIgnoreForm();
+    document.getElementById('ignore-modal').classList.add('open');
+    loadIgnore().then(function () {
+      var f = ignoreFields();
+      if (f.pattern && ignoreEditable) f.pattern.focus();
+    });
+  };
+  window.closeIgnore = function () {
+    document.getElementById('ignore-modal').classList.remove('open');
+    resetIgnoreForm();
+  };
+  window.cancelIgnoreEdit = resetIgnoreForm;
+
+  window.editIgnore = function (id) {
+    var rule = null;
+    for (var i = 0; i < ignoreRules.length; i++) if (ignoreRules[i].id === id) rule = ignoreRules[i];
+    if (!rule) return;
+    var f = ignoreFields();
+    ignoreEditingId = id;
+    if (f.pattern) { f.pattern.value = rule.pattern; f.pattern.focus(); }
+    if (f.note) f.note.value = rule.note || '';
+    if (f.submit) f.submit.textContent = 'Save';
+    if (f.cancel) f.cancel.style.display = '';
+    ignoreError('');
+  };
+
+  window.submitIgnore = function () {
+    var f = ignoreFields();
+    var pattern = f.pattern ? f.pattern.value.trim() : '';
+    if (!pattern) { ignoreError('Enter a path to ignore.'); return; }
+    var body = { pattern: pattern, note: f.note ? f.note.value.trim() : '' };
+    var editing = ignoreEditingId;
+    var url = editing ? PREFIX + '/filters/' + encodeURIComponent(editing) : PREFIX + '/filters';
+    sendIgnore(editing ? 'PATCH' : 'POST', url, body);
+  };
+
+  window.toggleIgnore = function (id, enabled) {
+    sendIgnore('PATCH', PREFIX + '/filters/' + encodeURIComponent(id), { enabled: !!enabled });
+  };
+
+  window.deleteIgnore = function (id) {
+    sendIgnore('DELETE', PREFIX + '/filters/' + encodeURIComponent(id), null);
+  };
+
+  /**
+   * One writer for every mutation. Rules are also sent as query params so the
+   * request still carries them if the host app runs without a body parser.
+   */
+  function sendIgnore(method, url, body) {
+    var full = url;
+    if (body) {
+      var qs = [];
+      for (var k in body) if (body[k] !== undefined) qs.push(k + '=' + encodeURIComponent(body[k]));
+      if (qs.length) full += (url.indexOf('?') >= 0 ? '&' : '?') + qs.join('&');
+    }
+    ignoreError('');
+    fetch(full, {
+      method: method,
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: body ? JSON.stringify(body) : undefined
+    })
+      .then(function (r) { return r.json().catch(function () { return { ok: r.ok }; }); })
+      .then(function (d) {
+        if (d && d.ok === false) { ignoreError(d.error || 'That did not work.'); return; }
+        resetIgnoreForm();
+        // New rules only affect future requests, so the captured list is left as
+        // it is — refresh() just keeps the counts honest.
+        return loadIgnore().then(function () { lastSig = null; refresh(); });
+      })
+      .catch(function () { ignoreError('Request failed — is the app still running?'); });
+  }
+
+
   window.go = function (id) { location.href = PREFIX + '/' + id; };
   window.refresh = function () { lastSig = null; refresh(); };
   window.toggleAuto = function (btn) {
@@ -353,12 +551,24 @@ const CLIENT_SCRIPT = `(function () {
   };
 
   document.getElementById('clear-modal').addEventListener('click', function (e) { if (e.target === this) closeClearModal(); });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeClearModal(); });
+  document.getElementById('ignore-modal').addEventListener('click', function (e) { if (e.target === this) closeIgnore(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    closeClearModal();
+    closeIgnore();
+  });
+  // Enter submits from either field — this dialog is mostly typing one path.
+  var ignoreInputs = ['ignore-pattern', 'ignore-note'];
+  for (var ii = 0; ii < ignoreInputs.length; ii++) {
+    var inp = document.getElementById(ignoreInputs[ii]);
+    if (inp) inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') submitIgnore(); });
+  }
   var search = document.getElementById('search');
   if (search) search.addEventListener('input', function () { filter = search.value; renderView(); });
   window.addEventListener('hashchange', applyRoute);
 
   applyRoute();
   refresh();
+  loadIgnore(); // paints the topbar count so active rules are visible without opening the modal
   setInterval(function () { if (auto) refresh(); }, 2000);
 })();`;

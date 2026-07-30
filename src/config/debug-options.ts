@@ -70,6 +70,16 @@ export interface DebugModuleOptions {
    * globs (`/static/*`), or pass RegExps. The debug routes are always skipped.
    */
   ignore?: (string | RegExp)[];
+  /**
+   * Let the dashboard add, edit and delete its own ignore rules at runtime
+   * (the **Filters** button in the topbar) — for the health checks and probes
+   * that would otherwise fill the buffer, without a redeploy. Rules are stored
+   * in the active storage driver, so with `RedisStorage` every process shares
+   * them. The static `ignore` option above is always applied and is shown in
+   * that list as read-only. Default true. Set false to make the panel
+   * view-only.
+   */
+  runtimeIgnore?: boolean;
   /** Body/query keys to redact (case-insensitive substring match). */
   redactKeys?: string[];
   /** Header names to redact. Default: authorization, cookie, set-cookie. */
@@ -120,6 +130,7 @@ export interface ResolvedDebugOptions {
   /** Normalized: no leading/trailing slashes. */
   routePrefix: string;
   ignore: (string | RegExp)[];
+  runtimeIgnore: boolean;
   redactKeys: RegExp;
   redactHeaders: string[];
   maxBodyLength: number;
@@ -169,6 +180,7 @@ export function resolveDebugOptions(options: DebugModuleOptions = {}): ResolvedD
     nPlusOneThreshold: options.nPlusOneThreshold ?? 5,
     routePrefix: normalizeRoutePrefix(options.routePrefix),
     ignore: options.ignore ?? [],
+    runtimeIgnore: options.runtimeIgnore ?? true,
     redactKeys: new RegExp(redactKeys.map(escapeRegExp).join('|'), 'i'),
     redactHeaders: (options.redactHeaders ?? DEFAULT_REDACT_HEADERS).map((h) => h.toLowerCase()),
     maxBodyLength: options.maxBodyLength ?? 64 * 1024,

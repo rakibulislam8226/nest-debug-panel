@@ -1,6 +1,7 @@
 import type { DebugStorage } from '../interfaces/storage.interface';
 import { toRequestSummary } from '../interfaces/profile.interface';
 import type { RequestProfile, RequestSummary } from '../interfaces/profile.interface';
+import type { IgnoreRule } from '../interfaces/ignore-rule.interface';
 
 /**
  * Default storage: an in-memory ring buffer. Keeps at most `maxRequests`
@@ -9,6 +10,7 @@ import type { RequestProfile, RequestSummary } from '../interfaces/profile.inter
  */
 export class MemoryStorage implements DebugStorage {
   private readonly profiles = new Map<string, RequestProfile>();
+  private ignoreRules: IgnoreRule[] = [];
 
   constructor(private readonly maxRequests = 200) {}
 
@@ -36,5 +38,19 @@ export class MemoryStorage implements DebugStorage {
 
   count(): number {
     return this.profiles.size;
+  }
+
+  /**
+   * Ignore rules live alongside the profiles but outside the ring buffer —
+   * `clear()` wipes history, never the rules. In-process only: a separate worker
+   * has its own instance, and a restart starts empty. Point both processes at
+   * `RedisStorage` to share them.
+   */
+  loadIgnoreRules(): IgnoreRule[] {
+    return this.ignoreRules;
+  }
+
+  saveIgnoreRules(rules: IgnoreRule[]): void {
+    this.ignoreRules = rules;
   }
 }

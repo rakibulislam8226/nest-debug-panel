@@ -8,11 +8,13 @@ export { DebugContextService } from './context/debug-context.service';
 export { DebugInterceptor } from './interceptor/debug.interceptor';
 export { DebugAccessGuard } from './guards/debug-access.guard';
 export { PluginManager } from './plugins/plugin-manager.service';
+export { IgnoreRulesService, IgnoreRuleResult } from './filters/ignore-rules.service';
 
 // Interfaces
 export * from './interfaces/profile.interface';
 export * from './interfaces/recorder.interface';
 export * from './interfaces/storage.interface';
+export * from './interfaces/ignore-rule.interface';
 export * from './interfaces/plugin.interface';
 
 // Storage drivers
@@ -21,6 +23,15 @@ export { RedisStorage, RedisStorageOptions, RedisClientLike } from './storage/re
 
 // Analysis
 export { analyzeSql, normalizeSql, SqlAnalyzerOptions } from './analysis/sql-analyzer';
+
+// Ignore matching (shared by the `ignore` option and the panel's runtime rules)
+export {
+  compileIgnoreMatcher,
+  compileIgnoreMatchers,
+  normalizeIgnorePattern,
+  validateIgnorePattern,
+  PathMatcher,
+} from './utils/ignore-match';
 
 // Decorators
 export { DebugIgnore } from './decorators/debug-ignore.decorator';

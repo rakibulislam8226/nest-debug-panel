@@ -145,12 +145,49 @@ NEST_DEBUG_PANEL_STORAGE=redis    # shared Redis store (reads NEST_DEBUG_PANEL_R
 # (unset, or =memory)             # default: in-memory, per-process
 ```
 
+> **`NEST_DEBUG_PANEL_STORAGE=redis` on its own is not enough** — it selects the mode, it does not supply a connection. The panel still needs a Redis address from `NEST_DEBUG_PANEL_REDIS_URL`, `REDIS_URL`, or `REDIS_HOST`. If none of those is in your `.env`, it logs a warning and **silently falls back to in-memory**, and the Jobs list stays empty. Most apps already have one of them; if not, add one.
+
 You already run Redis for BullMQ, so there's nothing new to install. With both pieces in place — the import in the worker's module, and the env var in both processes — one panel shows requests, sockets **and** the worker's jobs together.
 
-- The connection comes from `NEST_DEBUG_PANEL_REDIS_URL` or `REDIS_URL`; if you configure Redis in parts instead, it's built from `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` / `REDIS_DB` — so most apps need no new variable at all.
-- **Fail-safe:** if Redis or the URL is missing, it falls back to in-memory with a warning — it never breaks boot.
+- The connection is auto-discovered from the Redis variables you already have (see [Choosing which Redis](#choosing-which-redis) below) — so most apps need no new variable at all.
+- **Fail-safe:** if no Redis address is found, or Redis is unreachable, it falls back to in-memory with a warning — it never breaks boot, but the panel then only shows that one process.
 - The **worker doesn't need to serve HTTP** — it just writes captures to Redis; the API process serves the panel and reads them back.
 - **Single-process app** (everything under one `npm start`)? You don't need any of this — the default in-memory store already shows jobs alongside requests.
+
+### Choosing which Redis
+
+With `NEST_DEBUG_PANEL_STORAGE=redis`, the connection is resolved in this order — **the first one found wins**:
+
+| # | Source | Use it when |
+| --- | --- | --- |
+| 1 | `NEST_DEBUG_PANEL_REDIS_URL` | You want to name the instance explicitly. Overrides everything below. |
+| 2 | `REDIS_URL` | You have one Redis and it's already in this variable. Nothing to add. |
+| 3 | `REDIS_HOST` + `REDIS_PORT` (default `6379`) + `REDIS_PASSWORD` + `REDIS_DB` | You configure Redis in parts rather than as a URL. `REDIS_HOST` is what triggers this path — port/password/db alone are not enough. |
+
+**If your app has more than one Redis**, set `NEST_DEBUG_PANEL_REDIS_URL` — otherwise auto-discovery picks whatever is in `REDIS_URL` / `REDIS_HOST`, which in most projects is the **cache** instance, not the one you meant:
+
+```bash
+NEST_DEBUG_PANEL_STORAGE=redis
+NEST_DEBUG_PANEL_REDIS_URL=redis://queue-redis:6379/5   # wins; REDIS_URL is ignored entirely
+```
+
+A different **database number** (`/5` above) is the easiest way to keep debug profiles off your live keyspace while reusing an instance you already run. Either way the store is namespaced under a `nest-debug-panel:` key prefix and every profile carries a 1-hour TTL, so it stays out of the way of your application's keys.
+
+Use the **same** connection and prefix in every process — the API and the worker only see each other's captures if they read and write the same keys.
+
+Prefer to hand over a client you already manage — including a specific one out of several — instead of a URL? Pass the storage driver directly and it takes precedence over all env vars:
+
+```ts
+import IORedis from 'ioredis';
+import { DebugModule, RedisStorage } from 'nest-debug-panel';
+
+const queueRedis = new IORedis(process.env.QUEUE_REDIS_URL);
+
+DebugModule.forRoot({
+  // reuses your connection; the panel never closes a client it didn't open
+  storage: new RedisStorage({ client: queueRedis, prefix: 'nest-debug-panel', ttlSeconds: 3600 }),
+});
+```
 
 ## Database, Redis and HTTP capture is automatic
 
@@ -194,6 +231,7 @@ DebugModule.forRoot({
   nPlusOneThreshold: 5,         // repeated SELECTs before the N+1 warning fires
   routePrefix: '/__debug',
   ignore: ['/health', '/docs*', /^\/webhooks\//],
+  runtimeIgnore: true,          // let the dashboard manage its own ignore list (Ignored button)
   redactKeys: ['password', 'secret', 'token', ...],
   redactHeaders: ['authorization', 'cookie', 'set-cookie', 'x-api-key'],
   maxBodyLength: 65536,         // bytes kept per captured body
@@ -222,7 +260,43 @@ NEST_DEBUG_PANEL_ENABLED=false  # force OFF anywhere — even in development
 
 Accepted values are case-insensitive: `true` / `1` / `yes` / `on` enable it, `false` / `0` / `no` / `off` disable it. Anything unrecognized (or an unset/empty var) is ignored, so the option and `NODE_ENV` default still apply. When disabled, the interceptor passes every request straight through, nothing is instrumented or stored, and the dashboard routes return 404.
 
-To exclude routes from profiling, use the `ignore` option (`'/health'`, globs like `'/static/*'`, or RegExps) or put `@DebugIgnore()` on a controller or handler. The panel's own routes are always excluded.
+To exclude routes from profiling, use the `ignore` option (`'/health'`, globs like `'/static/*'`, or RegExps), put `@DebugIgnore()` on a controller or handler, or add a rule from the dashboard — see [Ignoring noisy endpoints](#ignoring-noisy-endpoints) next. The panel's own routes are always excluded.
+
+## Ignoring noisy endpoints
+
+Behind a load balancer, `/health` gets hit every second or two. In a 200-profile
+buffer that means 190 health checks and 10 real requests — the ones you opened
+the panel to look at are already evicted.
+
+Click **Ignored** in the topbar to fix that without a redeploy. Add `/health`,
+and matching requests are dropped **at capture time**, so the buffer fills with
+traffic you care about instead:
+
+| In the dialog | What it does |
+| --- | --- |
+| **Add** | Start ignoring a path. `/health` also covers `/health/db`; `*` matches anything (`/v1/*/ping`). |
+| **Edit** | Change the pattern or its note. |
+| **on** toggle | Stop applying a rule without deleting it — useful when you want one look at that endpoint. |
+| **Delete** | Capture it again. |
+| *n* **skipped** | How many requests that rule has dropped since the process started, so you can see it working. |
+
+Two things worth knowing:
+
+- Rules apply to **future** requests only. Health checks already in the list stay there — hit **Clear** once after adding the rule.
+- Rules are saved in the active storage driver. With the default in-memory store they last as long as the process; with `NEST_DEBUG_PANEL_STORAGE=redis` they're **shared by every process** and survive restarts, so adding `/health` in the API panel also stops the worker from capturing it (within a few seconds).
+
+Patterns from the `ignore` option appear in the same list marked **read-only** —
+one place to see every reason a request might be missing. To turn editing off
+entirely and keep the dialog as a viewer, set `runtimeIgnore: false`.
+
+The rules are plain HTTP, so scripts and provisioning can use them too:
+
+```bash
+curl -X POST     'localhost:3000/__debug/filters?pattern=/health&note=k8s%20probe'
+curl -X PATCH    'localhost:3000/__debug/filters/<id>?enabled=false'
+curl -X DELETE   'localhost:3000/__debug/filters/<id>'
+curl -H 'accept: application/json' 'localhost:3000/__debug?feed=filters'
+```
 
 ## Works with any ORM, any database
 
@@ -354,6 +428,14 @@ The dashboard is plain HTML served by the package, but the same routes speak JSO
 | `/__debug` | GET | request list |
 | `/__debug/:id` | GET | full profile with timeline, SQL, Redis, HTTP, exception, memory, headers, body, response |
 | `/__debug` | DELETE | clears history |
+| `/__debug?feed=filters` | GET | [ignore rules](#ignoring-noisy-endpoints) + whether they're editable |
+| `/__debug/filters` | POST | add an ignore rule (`pattern`, optional `note`) |
+| `/__debug/filters/:id` | PATCH | update `pattern`, `note` or `enabled` |
+| `/__debug/filters/:id` | DELETE | delete one rule |
+
+Rule writes accept a JSON body or query parameters, so they work even if the host
+app boots without a body parser. A rejected rule answers `400` with
+`{ ok: false, error }` — the reason is safe to show to a user.
 
 Build your own frontend or tooling on top of it if you like.
 
@@ -369,6 +451,7 @@ Build your own frontend or tooling on top of it if you like.
 The default store is an in-memory ring buffer that keeps the latest `maxRequests` profiles — perfect for a single-process app.
 
 - **Running an API + worker as separate processes?** Set `NEST_DEBUG_PANEL_STORAGE=redis` so one panel shows everything — see [Multi-process apps (API + worker)](#multi-process-apps-api--worker).
+- **More than one Redis in your app?** Point the panel at the one you want with `NEST_DEBUG_PANEL_REDIS_URL` — see [Choosing which Redis](#choosing-which-redis).
 - **Bringing your own driver?** Implement the five-method `DebugStorage` interface (`save`/`find`/`list`/`clear`/`count`) and pass it as `storage` — a database or file store works the same way.
 
 ## Example app

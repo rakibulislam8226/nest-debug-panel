@@ -27,6 +27,8 @@ import { DebugContextService } from '../context/debug-context.service';
 import { PluginManager } from '../plugins/plugin-manager.service';
 import { captureJobSuccess, createJobProfile, finalizeProfile } from '../context/profile-lifecycle';
 import { byteSize, safeSerialize, sanitizeHeaders, sanitizeValue } from '../utils/common';
+import { compileIgnoreMatchers, pathOf, type PathMatcher } from '../utils/ignore-match';
+import { IgnoreRulesService } from '../filters/ignore-rules.service';
 
 interface RequestLike {
   method?: string;
@@ -73,7 +75,7 @@ interface SocketClientLike {
 @Injectable()
 export class DebugInterceptor implements NestInterceptor {
   private readonly logger = new Logger('NestDebugPanel');
-  private readonly ignoreMatchers: Array<(path: string) => boolean>;
+  private readonly ignoreMatchers: PathMatcher[];
 
   constructor(
     @Inject(DEBUG_OPTIONS) private readonly options: ResolvedDebugOptions,
@@ -81,6 +83,7 @@ export class DebugInterceptor implements NestInterceptor {
     private readonly debugContext: DebugContextService,
     private readonly plugins: PluginManager,
     private readonly reflector: Reflector,
+    private readonly ignoreRules: IgnoreRulesService,
   ) {
     this.ignoreMatchers = compileIgnoreMatchers(this.options.ignore);
   }
@@ -408,10 +411,13 @@ export class DebugInterceptor implements NestInterceptor {
   }
 
   private shouldIgnore(url: string, executionContext: ExecutionContext): boolean {
-    const path = url.split('?')[0] ?? '';
+    const path = pathOf(url);
     const prefix = `/${this.options.routePrefix}`;
     if (path === prefix || path.startsWith(`${prefix}/`)) return true;
     if (this.ignoreMatchers.some((matches) => matches(path))) return true;
+    // Rules added from the dashboard. Checked after the static ones so a
+    // config-declared pattern short-circuits before we touch the hit counters.
+    if (this.ignoreRules.matches(path)) return true;
     return this.isDebugIgnored(executionContext);
   }
 
@@ -426,18 +432,3 @@ export class DebugInterceptor implements NestInterceptor {
   }
 }
 
-function compileIgnoreMatchers(patterns: (string | RegExp)[]): Array<(path: string) => boolean> {
-  return patterns.map((pattern) => {
-    if (pattern instanceof RegExp) return (path: string) => pattern.test(path);
-    if (pattern.includes('*')) {
-      const source = pattern
-        .split('*')
-        .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-        .join('.*');
-      const regex = new RegExp(`^${source}$`);
-      return (path: string) => regex.test(path);
-    }
-    const normalized = pattern.endsWith('/') ? pattern.slice(0, -1) : pattern;
-    return (path: string) => path === normalized || path.startsWith(`${normalized}/`);
-  });
-}

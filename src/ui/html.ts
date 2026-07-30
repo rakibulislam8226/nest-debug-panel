@@ -250,6 +250,47 @@ export const BASE_STYLES = `
   .btn.solid-danger { background: #b62324; border-color: #b62324; color: #fff; }
   .btn.solid-danger:hover { background: var(--err); border-color: var(--err); color: #fff; }
 
+  /* --- Ignored-endpoints modal --- */
+  .btn.solid { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+  .btn.solid:hover { filter: brightness(1.08); }
+  .modal.wide { width: 620px; padding: 20px 22px; }
+  .modal.wide p { margin-bottom: 14px; }
+  .modal-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+  .modal-head h3 { margin: 0; }
+  .modal-head .tag { color: var(--muted); font-size: 11px; }
+  .modal .form-note code { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); background: var(--panel2); border-radius: 4px; padding: 1px 4px; }
+  .field-row { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 6px; }
+  .field-row .grow { flex: 1 1 auto; min-width: 0; }
+  .inp {
+    width: 100%; background: var(--panel2); color: var(--text); font-size: 13px;
+    border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px;
+    font-family: inherit;
+  }
+  .inp:focus { outline: none; border-color: var(--accent); }
+  .inp.mono { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .inp::placeholder { color: var(--muted); }
+  .form-note { color: var(--muted); font-size: 12px; margin: 0 0 14px; }
+  .form-err { color: var(--err); font-size: 12px; margin: 0 0 14px; min-height: 15px; }
+  .rule-list { list-style: none; max-height: 46vh; overflow-y: auto; margin: 0 -22px -4px; padding: 0 22px; }
+  .rule {
+    display: flex; align-items: center; gap: 10px; padding: 9px 0;
+    border-top: 1px solid var(--border); font-size: 13px;
+  }
+  .rule.off .rule-pattern { opacity: 0.45; text-decoration: line-through; }
+  .rule-main { flex: 1 1 auto; min-width: 0; }
+  .rule-pattern { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+  .rule-note { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .rule-acts { display: flex; gap: 6px; flex: 0 0 auto; }
+  .btn.mini { padding: 4px 8px; font-size: 12px; }
+  .toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; cursor: pointer; user-select: none; }
+  .toggle input { accent-color: var(--accent); }
+
+  @media (max-width: 720px) {
+    .modal.wide { width: 100%; }
+    .field-row { flex-wrap: wrap; }
+    .rule { flex-wrap: wrap; }
+  }
+
   @media (max-width: 720px) {
     /* Sidebar becomes a top bar: brand row, then a single scrollable icon nav. */
     .app { grid-template-columns: 1fr; }

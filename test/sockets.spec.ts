@@ -8,6 +8,7 @@ import { DebugModule } from '../src/debug.module';
 import { DebugInterceptor } from '../src/interceptor/debug.interceptor';
 import { DebugContextService } from '../src/context/debug-context.service';
 import { PluginManager } from '../src/plugins/plugin-manager.service';
+import { IgnoreRulesService } from '../src/filters/ignore-rules.service';
 import { DEBUG_OPTIONS, DEBUG_STORAGE, SOCKET_MESSAGE_METADATA } from '../src/constants';
 import type { ResolvedDebugOptions } from '../src/config/debug-options';
 import type { DebugStorage } from '../src/interfaces/storage.interface';
@@ -81,6 +82,7 @@ describe('DebugInterceptor — socket.io capture', () => {
       context,
       app.get(PluginManager),
       app.get(Reflector),
+      app.get(IgnoreRulesService),
     );
   });
 
@@ -147,7 +149,14 @@ describe('DebugInterceptor — socket.io capture', () => {
 
   it('skips socket capture when sockets are disabled', async () => {
     const disabled: ResolvedDebugOptions = { ...options, captureSockets: false };
-    const off = new DebugInterceptor(disabled, storage, context, app.get(PluginManager), app.get(Reflector));
+    const off = new DebugInterceptor(
+      disabled,
+      storage,
+      context,
+      app.get(PluginManager),
+      app.get(Reflector),
+      app.get(IgnoreRulesService),
+    );
     const handler = handlerFor('chat.send');
     const next: CallHandler = { handle: () => of({ ok: true }) };
 

@@ -1,10 +1,26 @@
-import { Controller, Delete, Get, Inject, Logger, Param, Query, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Logger,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { DEBUG_OPTIONS, DEBUG_STORAGE, DEFAULT_ROUTE_PREFIX } from '../constants';
 import type { ResolvedDebugOptions } from '../config/debug-options';
 import type { DebugStorage } from '../interfaces/storage.interface';
 import type { RequestProfile, RequestSummary } from '../interfaces/profile.interface';
+import type { IgnoreRuleInput } from '../interfaces/ignore-rule.interface';
 import { DebugAccessGuard } from '../guards/debug-access.guard';
 import { DebugIgnore } from '../decorators/debug-ignore.decorator';
+import { IgnoreRulesService, type IgnoreRuleResult } from '../filters/ignore-rules.service';
 import { renderListPage } from '../ui/render-list';
 import { renderDetailPage } from '../ui/render-detail';
 
@@ -33,9 +49,13 @@ interface AdapterResponse {
 
 /**
  * Debug API + UI. Content-negotiated:
- *   GET    /__debug      → HTML dashboard (browser) or JSON summaries (Accept: application/json)
- *   GET    /__debug/:id  → HTML detail page or full JSON profile
- *   DELETE /__debug      → clear history
+ *   GET    /__debug                → HTML dashboard (browser) or JSON summaries (Accept: application/json)
+ *   GET    /__debug?feed=filters   → ignore rules + whether they're editable
+ *   GET    /__debug/:id            → HTML detail page or full JSON profile
+ *   POST   /__debug/filters        → add an ignore rule
+ *   PATCH  /__debug/filters/:id    → update one (pattern / note / enabled)
+ *   DELETE /__debug/filters/:id    → delete one
+ *   DELETE /__debug                → clear history
  *
  * Responses are written directly to the adapter's response object — never
  * returned through Nest's serialization pipeline. This keeps the panel immune
@@ -55,6 +75,7 @@ export class DebugController {
   constructor(
     @Inject(DEBUG_OPTIONS) private readonly options: ResolvedDebugOptions,
     @Inject(DEBUG_STORAGE) private readonly storage: DebugStorage,
+    private readonly ignoreRules: IgnoreRulesService,
   ) {}
 
   /**
@@ -130,6 +151,17 @@ export class DebugController {
       send(response, 200, JSON_TYPE, safeJson({ logs }));
       return;
     }
+    // The Filters modal's data: every ignore rule plus whether editing is on,
+    // so the UI can render itself read-only without a second request.
+    if (feed === 'filters') {
+      send(
+        response,
+        200,
+        JSON_TYPE,
+        safeJson({ editable: this.ignoreRules.editable, rules: this.ignoreRules.list() }),
+      );
+      return;
+    }
     // The dashboard shell is data-less (it hydrates from the JSON feed), so the
     // HTML path skips the list() call entirely.
     if (wantsHtml(request)) {
@@ -174,6 +206,38 @@ export class DebugController {
       }
     }
     return out;
+  }
+
+  /**
+   * Ignore-rule CRUD, declared before `@Get(':id')` so the literal path always
+   * wins over the id parameter.
+   *
+   * Input is read from the JSON body when there is one and from the query string
+   * otherwise: a host app may boot with `bodyParser: false`, and the panel has
+   * to keep working when it does.
+   */
+  @Post('filters')
+  async addFilter(
+    @Res() response: AdapterResponse,
+    @Body() body?: IgnoreRuleInput,
+    @Query() query?: IgnoreRuleInput,
+  ): Promise<void> {
+    sendRule(response, await this.ignoreRules.add(ruleInput(body, query)));
+  }
+
+  @Patch('filters/:id')
+  async updateFilter(
+    @Param('id') id: string,
+    @Res() response: AdapterResponse,
+    @Body() body?: IgnoreRuleInput,
+    @Query() query?: IgnoreRuleInput,
+  ): Promise<void> {
+    sendRule(response, await this.ignoreRules.update(id, ruleInput(body, query)));
+  }
+
+  @Delete('filters/:id')
+  async removeFilter(@Param('id') id: string, @Res() response: AdapterResponse): Promise<void> {
+    sendRule(response, await this.ignoreRules.remove(id));
   }
 
   @Get(':id')
@@ -226,6 +290,21 @@ const JSON_TYPE = 'application/json; charset=utf-8';
 function wantsHtml(request: NegotiableRequest): boolean {
   const accept = String(request?.headers?.['accept'] ?? '');
   return accept.includes('text/html');
+}
+
+/**
+ * Merge body and query into one rule input. `enabled` needs special handling:
+ * a query string carries it as the text `"false"`, which is truthy in JS.
+ */
+function ruleInput(body?: IgnoreRuleInput, query?: IgnoreRuleInput): IgnoreRuleInput {
+  const merged: IgnoreRuleInput = { ...(query ?? {}), ...(body ?? {}) };
+  if (typeof merged.enabled === 'string') merged.enabled = merged.enabled !== 'false';
+  return merged;
+}
+
+/** A rejected rule is a client mistake (bad pattern, duplicate), not a server fault. */
+function sendRule(response: AdapterResponse, result: IgnoreRuleResult): void {
+  send(response, result.ok ? 200 : 400, JSON_TYPE, safeJson(result));
 }
 
 function safeJson(value: unknown): string {
