@@ -145,12 +145,49 @@ NEST_DEBUG_PANEL_STORAGE=redis    # shared Redis store (reads NEST_DEBUG_PANEL_R
 # (unset, or =memory)             # default: in-memory, per-process
 ```
 
+> **`NEST_DEBUG_PANEL_STORAGE=redis` on its own is not enough** — it selects the mode, it does not supply a connection. The panel still needs a Redis address from `NEST_DEBUG_PANEL_REDIS_URL`, `REDIS_URL`, or `REDIS_HOST`. If none of those is in your `.env`, it logs a warning and **silently falls back to in-memory**, and the Jobs list stays empty. Most apps already have one of them; if not, add one.
+
 You already run Redis for BullMQ, so there's nothing new to install. With both pieces in place — the import in the worker's module, and the env var in both processes — one panel shows requests, sockets **and** the worker's jobs together.
 
-- The connection comes from `NEST_DEBUG_PANEL_REDIS_URL` or `REDIS_URL`; if you configure Redis in parts instead, it's built from `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` / `REDIS_DB` — so most apps need no new variable at all.
-- **Fail-safe:** if Redis or the URL is missing, it falls back to in-memory with a warning — it never breaks boot.
+- The connection is auto-discovered from the Redis variables you already have (see [Choosing which Redis](#choosing-which-redis) below) — so most apps need no new variable at all.
+- **Fail-safe:** if no Redis address is found, or Redis is unreachable, it falls back to in-memory with a warning — it never breaks boot, but the panel then only shows that one process.
 - The **worker doesn't need to serve HTTP** — it just writes captures to Redis; the API process serves the panel and reads them back.
 - **Single-process app** (everything under one `npm start`)? You don't need any of this — the default in-memory store already shows jobs alongside requests.
+
+### Choosing which Redis
+
+With `NEST_DEBUG_PANEL_STORAGE=redis`, the connection is resolved in this order — **the first one found wins**:
+
+| # | Source | Use it when |
+| --- | --- | --- |
+| 1 | `NEST_DEBUG_PANEL_REDIS_URL` | You want to name the instance explicitly. Overrides everything below. |
+| 2 | `REDIS_URL` | You have one Redis and it's already in this variable. Nothing to add. |
+| 3 | `REDIS_HOST` + `REDIS_PORT` (default `6379`) + `REDIS_PASSWORD` + `REDIS_DB` | You configure Redis in parts rather than as a URL. `REDIS_HOST` is what triggers this path — port/password/db alone are not enough. |
+
+**If your app has more than one Redis**, set `NEST_DEBUG_PANEL_REDIS_URL` — otherwise auto-discovery picks whatever is in `REDIS_URL` / `REDIS_HOST`, which in most projects is the **cache** instance, not the one you meant:
+
+```bash
+NEST_DEBUG_PANEL_STORAGE=redis
+NEST_DEBUG_PANEL_REDIS_URL=redis://queue-redis:6379/5   # wins; REDIS_URL is ignored entirely
+```
+
+A different **database number** (`/5` above) is the easiest way to keep debug profiles off your live keyspace while reusing an instance you already run. Either way the store is namespaced under a `nest-debug-panel:` key prefix and every profile carries a 1-hour TTL, so it stays out of the way of your application's keys.
+
+Use the **same** connection and prefix in every process — the API and the worker only see each other's captures if they read and write the same keys.
+
+Prefer to hand over a client you already manage — including a specific one out of several — instead of a URL? Pass the storage driver directly and it takes precedence over all env vars:
+
+```ts
+import IORedis from 'ioredis';
+import { DebugModule, RedisStorage } from 'nest-debug-panel';
+
+const queueRedis = new IORedis(process.env.QUEUE_REDIS_URL);
+
+DebugModule.forRoot({
+  // reuses your connection; the panel never closes a client it didn't open
+  storage: new RedisStorage({ client: queueRedis, prefix: 'nest-debug-panel', ttlSeconds: 3600 }),
+});
+```
 
 ## Database, Redis and HTTP capture is automatic
 
@@ -369,6 +406,7 @@ Build your own frontend or tooling on top of it if you like.
 The default store is an in-memory ring buffer that keeps the latest `maxRequests` profiles — perfect for a single-process app.
 
 - **Running an API + worker as separate processes?** Set `NEST_DEBUG_PANEL_STORAGE=redis` so one panel shows everything — see [Multi-process apps (API + worker)](#multi-process-apps-api--worker).
+- **More than one Redis in your app?** Point the panel at the one you want with `NEST_DEBUG_PANEL_REDIS_URL` — see [Choosing which Redis](#choosing-which-redis).
 - **Bringing your own driver?** Implement the five-method `DebugStorage` interface (`save`/`find`/`list`/`clear`/`count`) and pass it as `storage` — a database or file store works the same way.
 
 ## Example app
