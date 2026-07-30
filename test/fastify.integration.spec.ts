@@ -4,6 +4,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import request from 'supertest';
 import { DebugModule } from '../src/debug.module';
 import { DebugContextService } from '../src/context/debug-context.service';
+import { renderListPage } from '../src/ui/render-list';
 import type { RequestProfile, RequestSummary } from '../src/interfaces/profile.interface';
 
 @Controller()
@@ -134,6 +135,32 @@ describe('DebugModule on Fastify', () => {
       .set('accept', 'application/json')
       .expect(200);
     expect(empty.body.rules).toHaveLength(0);
+  });
+
+  /**
+   * Fastify refuses an empty body sent with `content-type: application/json`, so a
+   * DELETE must not advertise one. The dashboard's fetch() is the only caller that
+   * sets headers on every request, and supertest omits the header unless asked —
+   * which is exactly how this slipped through the first time.
+   */
+  it('deletes a rule the way the dashboard sends it', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/__debug/filters')
+      .send({ pattern: '/users' })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .delete(`/__debug/filters/${created.body.rule.id}`)
+      .set('accept', 'application/json')
+      .expect(200);
+  });
+
+  it('does not put a content-type on the body-less request', () => {
+    const script = renderListPage('__debug');
+    // The header object is built conditionally; a hard-coded content-type here
+    // would 400 on Fastify again.
+    expect(script).toContain("if (body) headers['content-type'] = 'application/json';");
+    expect(script).not.toContain("headers: { 'content-type': 'application/json', accept:");
   });
 
   it('rejects a bad rule with 400 through Fastify', async () => {
