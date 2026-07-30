@@ -20,6 +20,7 @@ import type { RequestProfile, RequestSummary } from '../interfaces/profile.inter
 import type { IgnoreRuleInput } from '../interfaces/ignore-rule.interface';
 import { DebugAccessGuard } from '../guards/debug-access.guard';
 import { DebugIgnore } from '../decorators/debug-ignore.decorator';
+import { SkipThrottling } from '../decorators/skip-throttling.decorator';
 import { IgnoreRulesService, type IgnoreRuleResult } from '../filters/ignore-rules.service';
 import { renderListPage } from '../ui/render-list';
 import { renderDetailPage } from '../ui/render-detail';
@@ -67,6 +68,7 @@ interface AdapterResponse {
  * itself is excluded from profiling.
  */
 @DebugIgnore()
+@SkipThrottling()
 @UseGuards(DebugAccessGuard)
 @Controller(DEFAULT_ROUTE_PREFIX)
 export class DebugController {

@@ -11,8 +11,12 @@ import {
   type PathMatcher,
 } from '../utils/ignore-match';
 
-/** How often a shared store is re-read, so a rule added on one instance reaches the others. */
-const REFRESH_INTERVAL_MS = 5000;
+/**
+ * How often a *shared* store is re-read, so a rule added on one instance reaches
+ * the others. Rules change by hand, once in a while — polling faster than this
+ * buys nothing and costs a Redis round trip per tick, per process, forever.
+ */
+const REFRESH_INTERVAL_MS = 15_000;
 
 export interface IgnoreRuleResult {
   ok: boolean;
@@ -24,11 +28,17 @@ export interface IgnoreRuleResult {
 /**
  * Owns the endpoint-ignore rules the dashboard manages at runtime.
  *
- * Matching has to be **synchronous and cheap** — it runs on the hot path of
- * every request — so the service keeps a compiled snapshot in memory and never
- * touches storage during a match. Writes go to storage; a background refresh
- * pulls other instances' changes in, which is what makes the feature work for a
- * clustered API sharing one Redis.
+ * Matching runs on the hot path of every request, so it does exactly one thing:
+ * walk a pre-compiled array of matchers and return on the first hit. No
+ * counters, no bookkeeping, nothing written anywhere — an ignored request costs
+ * a few string comparisons and is gone.
+ *
+ * Everything else is arranged to stay idle. Writes go to storage, and a
+ * background refresh pulls other instances' changes in — but only when the store
+ * is actually shared, so the default in-memory setup does no periodic work at
+ * all. When a refresh finds the rules unchanged (the normal case) it returns
+ * without rebuilding anything, so identical patterns aren't recompiled into new
+ * RegExps every tick for the life of the process.
  *
  * Rules from `forRoot({ ignore })` are listed here too, marked `config`, so the
  * panel can show every reason a request might be missing — but they stay
@@ -38,9 +48,10 @@ export interface IgnoreRuleResult {
 export class IgnoreRulesService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger('NestDebugPanel');
   private runtimeRules: IgnoreRule[] = [];
-  /** Compiled matchers for the enabled runtime rules, rebuilt on every change. */
-  private compiled: Array<{ id: string; matches: PathMatcher }> = [];
-  private readonly hits = new Map<string, number>();
+  /** Compiled matchers for the enabled runtime rules, rebuilt only when they change. */
+  private compiled: PathMatcher[] = [];
+  /** Fingerprint of the loaded rules, so an unchanged refresh can bail out early. */
+  private signature = '';
   private readonly configRules: IgnoreRule[];
   private refreshTimer?: ReturnType<typeof setInterval>;
 
@@ -66,9 +77,10 @@ export class IgnoreRulesService implements OnApplicationBootstrap, OnModuleDestr
   async onApplicationBootstrap(): Promise<void> {
     if (!this.editable) return;
     await this.reload();
-    if (typeof this.storage.loadIgnoreRules !== 'function') return;
-    // Only a shared store can change behind our back, and only that case needs
-    // polling. unref() so a debug timer never keeps the process alive.
+    // Only a shared store can change behind our back, so only that case is worth
+    // polling — with the default in-memory driver this service goes quiet after
+    // bootstrap. unref() so a debug timer never keeps the process alive.
+    if (typeof this.storage.loadIgnoreRules !== 'function' || !this.storage.sharedIgnoreRules) return;
     this.refreshTimer = setInterval(() => void this.reload(), REFRESH_INTERVAL_MS);
     this.refreshTimer.unref?.();
   }
@@ -79,24 +91,20 @@ export class IgnoreRulesService implements OnApplicationBootstrap, OnModuleDestr
   }
 
   /**
-   * The hot path: does any enabled runtime rule cover this path? Config rules
-   * are matched by the interceptor's own compiled list, so they're skipped here
-   * to avoid testing them twice.
+   * The hot path: does any enabled runtime rule cover this path? Config rules are
+   * matched by the interceptor's own compiled list, so they're skipped here to
+   * avoid testing them twice.
    */
   matches(path: string): boolean {
-    if (this.compiled.length === 0) return false;
-    for (const rule of this.compiled) {
-      if (!rule.matches(path)) continue;
-      this.hits.set(rule.id, (this.hits.get(rule.id) ?? 0) + 1);
-      return true;
+    for (const matches of this.compiled) {
+      if (matches(path)) return true;
     }
     return false;
   }
 
   /** Every rule the panel should show — runtime first, then config. */
   list(): IgnoreRule[] {
-    const runtime = this.runtimeRules.map((rule) => ({ ...rule, hits: this.hits.get(rule.id) ?? 0 }));
-    return [...runtime, ...this.configRules];
+    return [...this.runtimeRules, ...this.configRules];
   }
 
   async add(input: IgnoreRuleInput): Promise<IgnoreRuleResult> {
@@ -152,7 +160,6 @@ export class IgnoreRulesService implements OnApplicationBootstrap, OnModuleDestr
     const rule = this.runtimeRules.find((item) => item.id === id);
     if (!rule) return { ok: false, error: 'Rule not found.' };
     this.runtimeRules = this.runtimeRules.filter((item) => item.id !== id);
-    this.hits.delete(id);
     await this.commit();
     return { ok: true, rule };
   }
@@ -164,8 +171,10 @@ export class IgnoreRulesService implements OnApplicationBootstrap, OnModuleDestr
       return;
     }
     try {
-      const stored = await this.storage.loadIgnoreRules();
-      this.runtimeRules = sanitize(stored);
+      const rules = sanitize(await this.storage.loadIgnoreRules());
+      const signature = signatureOf(rules);
+      if (signature === this.signature) return; // nothing changed — keep the compiled snapshot
+      this.runtimeRules = rules;
       this.recompile();
     } catch (error) {
       this.logger.warn(`Could not load ignore rules: ${String(error)}`);
@@ -177,34 +186,41 @@ export class IgnoreRulesService implements OnApplicationBootstrap, OnModuleDestr
     this.recompile();
     if (typeof this.storage.saveIgnoreRules !== 'function') return;
     try {
-      await this.storage.saveIgnoreRules(this.runtimeRules.map(stripHits));
+      await this.storage.saveIgnoreRules(this.runtimeRules);
     } catch (error) {
       this.logger.warn(`Could not persist ignore rules: ${String(error)}`);
     }
   }
 
   private recompile(): void {
-    const next: Array<{ id: string; matches: PathMatcher }> = [];
+    const next: PathMatcher[] = [];
     for (const rule of this.runtimeRules) {
       if (!rule.enabled) continue;
       try {
-        next.push({ id: rule.id, matches: compileIgnoreMatcher(rule.pattern) });
+        next.push(compileIgnoreMatcher(rule.pattern));
       } catch {
         /* an uncompilable pattern is skipped rather than breaking every request */
       }
     }
     this.compiled = next;
+    this.signature = signatureOf(this.runtimeRules);
   }
+}
+
+/**
+ * Cheap fingerprint of the rule set — everything a refresh could meaningfully
+ * change. Comparing this is what lets an unchanged poll cost one string build
+ * instead of a full sanitize-and-recompile.
+ */
+function signatureOf(rules: IgnoreRule[]): string {
+  let out = '';
+  for (const rule of rules) out += `${rule.id}\u0000${rule.pattern}\u0000${rule.enabled}\u0000${rule.note ?? ''}\u0001`;
+  return out;
 }
 
 function noteOf(value: unknown): string | undefined {
   const note = String(value ?? '').trim().slice(0, 120);
   return note.length > 0 ? note : undefined;
-}
-
-function stripHits(rule: IgnoreRule): IgnoreRule {
-  const { hits: _hits, ...rest } = rule;
-  return rest;
 }
 
 /**

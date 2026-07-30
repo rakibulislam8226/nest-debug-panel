@@ -24,4 +24,12 @@ export interface DebugStorage {
    */
   loadIgnoreRules?(): IgnoreRule[] | Promise<IgnoreRule[]>;
   saveIgnoreRules?(rules: IgnoreRule[]): void | Promise<void>;
+
+  /**
+   * `true` when other processes write to the same store, so the rules can change
+   * without this process doing anything. Only then is a periodic re-read worth
+   * its cost: with a process-local store there is nothing to poll for, and the
+   * service stays completely idle after bootstrap.
+   */
+  readonly sharedIgnoreRules?: boolean;
 }

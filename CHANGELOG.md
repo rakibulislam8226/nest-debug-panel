@@ -22,20 +22,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of the 200 kept profiles. Add, edit, toggle or delete a rule and matching
   requests are dropped **at capture time**, so the buffer holds real traffic
   instead. Patterns work exactly like the `ignore` option (`/health` covers
-  `/health/db`; `*` is a wildcard), each rule shows how many requests it has
-  skipped, and patterns declared in `forRoot({ ignore })` are listed alongside as
-  read-only so one screen explains every reason a request might be missing. Rules
-  persist through the active storage driver — with
-  `NEST_DEBUG_PANEL_STORAGE=redis` every process shares them, so a rule added in
-  the API panel also stops a separate worker from capturing that path. Set
+  `/health/db`; `*` is a wildcard), and patterns declared in `forRoot({ ignore })`
+  are listed alongside as read-only so one screen explains every reason a request
+  might be missing. A match is the end of it — the request is dropped without
+  being counted, stored or reported anywhere, so an ignored endpoint costs a few
+  string comparisons and nothing else. Rules persist through the active storage
+  driver — with `NEST_DEBUG_PANEL_STORAGE=redis` every process shares them, so a
+  rule added in the API panel also stops a separate worker from capturing that
+  path. Set
   `runtimeIgnore: false` to keep the dialog read-only. Also exposed over HTTP
   (`POST`/`PATCH`/`DELETE /__debug/filters`, `GET /__debug?feed=filters`) for
   scripting.
+- **The panel no longer rate-limits itself.** In an app that registers
+  `ThrottlerGuard` as an `APP_GUARD` — the documented way to rate-limit
+  everything — the dashboard's 2-second poll counted against the limit like user
+  traffic, so after a minute or so the panel answered
+  `ThrottlerException: Too Many Requests` instead of data (wrapped in whatever
+  envelope the app's global interceptor adds). The debug routes now carry
+  `@nestjs/throttler`'s skip flag, so this needs **no code in the host app**. The
+  flag is set per throttler name and covers `default`, `short`, `medium` and
+  `long`; an app with custom names can add a `skipIf` for the panel's prefix. The
+  decorator (`SkipThrottling`) is exported and writes the metadata keys directly,
+  so `@nestjs/throttler` stays an optional peer, not a dependency.
 - `DebugStorage` gained the optional pair `loadIgnoreRules()` /
-  `saveIgnoreRules()`. Custom drivers that skip them keep working — their rules
-  simply live for the lifetime of the process that added them.
+  `saveIgnoreRules()`, plus an optional `sharedIgnoreRules` flag a driver sets when
+  other processes write to the same store. Custom drivers that skip them keep
+  working — their rules simply live for the lifetime of the process that added
+  them, and no refresh is scheduled.
 
 ### Changed
+- `DebugInterceptor` takes one more constructor argument (`IgnoreRulesService`).
+  This only matters if you construct it by hand instead of letting the module
+  provide it — resolve it from the DI container and pass it through.
+- `RedisClientLike.set` is now `set(key, value, ...expiry)` so the driver can
+  write a value with no TTL. ioredis and hand-written 4-argument clients both
+  still satisfy the type; a custom client that *requires* the TTL arguments will
+  log a warning and skip persisting rules rather than fail.
 - Documented how the panel picks its Redis when an app runs several: resolution
   order is `NEST_DEBUG_PANEL_REDIS_URL` → `REDIS_URL` →
   `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD`/`REDIS_DB`, and

@@ -278,12 +278,15 @@ traffic you care about instead:
 | **Edit** | Change the pattern or its note. |
 | **on** toggle | Stop applying a rule without deleting it — useful when you want one look at that endpoint. |
 | **Delete** | Capture it again. |
-| *n* **skipped** | How many requests that rule has dropped since the process started, so you can see it working. |
+
+A match ends the request's journey through the panel then and there — nothing is
+counted, stored or reported for it, so an ignored endpoint costs a few string
+comparisons and nothing else.
 
 Two things worth knowing:
 
 - Rules apply to **future** requests only. Health checks already in the list stay there — hit **Clear** once after adding the rule.
-- Rules are saved in the active storage driver. With the default in-memory store they last as long as the process; with `NEST_DEBUG_PANEL_STORAGE=redis` they're **shared by every process** and survive restarts, so adding `/health` in the API panel also stops the worker from capturing it (within a few seconds).
+- Rules are saved in the active storage driver. With the default in-memory store they last as long as the process; with `NEST_DEBUG_PANEL_STORAGE=redis` they're **shared by every process** and survive restarts, so adding `/health` in the API panel also stops the worker from capturing it (within ~15 seconds, the shared-store refresh interval). With the default in-memory store there is nothing to refresh, so the panel does no background work at all.
 
 Patterns from the `ignore` option appear in the same list marked **read-only** —
 one place to see every reason a request might be missing. To turn editing off
@@ -442,6 +445,14 @@ Build your own frontend or tooling on top of it if you like.
 ## Security
 
 - Off in production automatically, unless you set `enabled: true` or `NEST_DEBUG_PANEL_ENABLED=true` (see [Enabling & disabling](#enabling--disabling)). When off, the interceptor passes requests straight through and the debug routes return 404.
+- **Not affected by your app's global interceptors or rate limiter.** The panel writes responses straight to the adapter, so a global response envelope (`{ hasErrors, data, errors }`) can't corrupt its HTML or JSON — and its routes opt out of `@nestjs/throttler`, so the dashboard's 2-second poll never trips a global `ThrottlerGuard` and gets `Too Many Requests` back. Both are automatic; there is nothing to configure. If your `ThrottlerModule` uses **custom throttler names** (anything other than `default`, `short`, `medium` or `long`), add a `skipIf` for the panel's prefix, since the skip flag is per name:
+
+  ```ts
+  ThrottlerModule.forRoot({
+    throttlers: [{ name: 'api', ttl: 60_000, limit: 60 }],
+    skipIf: (ctx) => (ctx.switchToHttp().getRequest().url ?? '').startsWith('/__debug'),
+  })
+  ```
 - Sensitive body keys and headers are redacted before anything is stored.
 - Gate the dashboard with `authorize: (req) => req.user?.isAdmin === true`.
 - Profiles live in process memory by default and never leave your machine.

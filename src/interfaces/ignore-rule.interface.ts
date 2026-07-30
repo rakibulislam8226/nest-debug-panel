@@ -22,11 +22,6 @@ export interface IgnoreRule {
    * panel. `runtime` — added from the dashboard and persisted in storage.
    */
   source: 'config' | 'runtime';
-  /**
-   * Requests this rule has skipped since the process started. Never persisted —
-   * it's a liveness signal ("is my rule actually matching?"), not state.
-   */
-  hits?: number;
 }
 
 /** The shape accepted when creating or updating a runtime rule. */
