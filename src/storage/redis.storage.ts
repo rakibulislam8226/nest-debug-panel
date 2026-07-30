@@ -1,6 +1,7 @@
 import type { DebugStorage } from '../interfaces/storage.interface';
 import { toRequestSummary } from '../interfaces/profile.interface';
 import type { RequestProfile, RequestSummary } from '../interfaces/profile.interface';
+import type { IgnoreRule } from '../interfaces/ignore-rule.interface';
 
 /**
  * Minimal structural view of an ioredis-compatible client. BullMQ already uses
@@ -8,7 +9,8 @@ import type { RequestProfile, RequestSummary } from '../interfaces/profile.inter
  * the package stays dependency-free.
  */
 export interface RedisClientLike {
-  set(key: string, value: string, mode: string, ttlSeconds: number): Promise<unknown>;
+  /** `set(key, value)` for values that must not expire; `set(key, value, 'EX', ttl)` for profiles. */
+  set(key: string, value: string, ...expiry: unknown[]): Promise<unknown>;
   get(key: string): Promise<string | null>;
   del(...keys: string[]): Promise<unknown>;
   lpush(key: string, ...values: string[]): Promise<unknown>;
@@ -137,8 +139,34 @@ export class RedisStorage implements DebugStorage {
     return this.client.llen(this.orderKey);
   }
 
+  /**
+   * Ignore rules, shared by every process pointed at this Redis — add `/health`
+   * from the panel and the worker stops capturing it too, within one refresh
+   * tick. Stored under its own key with **no TTL**: rules are configuration, not
+   * captures, so they outlive both the profiles and a restart, and `clear()`
+   * leaves them alone.
+   */
+  async loadIgnoreRules(): Promise<IgnoreRule[]> {
+    const raw = await this.client.get(this.ignoreKey);
+    if (!raw) return [];
+    const parsed = safeParse<IgnoreRule[]>(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  }
+
+  async saveIgnoreRules(rules: IgnoreRule[]): Promise<void> {
+    if (!rules.length) {
+      await this.client.del(this.ignoreKey);
+      return;
+    }
+    await this.client.set(this.ignoreKey, JSON.stringify(rules));
+  }
+
   private get orderKey(): string {
     return `${this.prefix}:order`;
+  }
+
+  private get ignoreKey(): string {
+    return `${this.prefix}:ignore`;
   }
 
   private key(kind: 'p' | 's', id: string): string {

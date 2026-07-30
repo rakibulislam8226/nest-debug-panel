@@ -231,6 +231,7 @@ DebugModule.forRoot({
   nPlusOneThreshold: 5,         // repeated SELECTs before the N+1 warning fires
   routePrefix: '/__debug',
   ignore: ['/health', '/docs*', /^\/webhooks\//],
+  runtimeIgnore: true,          // let the dashboard manage its own ignore list (Ignored button)
   redactKeys: ['password', 'secret', 'token', ...],
   redactHeaders: ['authorization', 'cookie', 'set-cookie', 'x-api-key'],
   maxBodyLength: 65536,         // bytes kept per captured body
@@ -259,7 +260,43 @@ NEST_DEBUG_PANEL_ENABLED=false  # force OFF anywhere — even in development
 
 Accepted values are case-insensitive: `true` / `1` / `yes` / `on` enable it, `false` / `0` / `no` / `off` disable it. Anything unrecognized (or an unset/empty var) is ignored, so the option and `NODE_ENV` default still apply. When disabled, the interceptor passes every request straight through, nothing is instrumented or stored, and the dashboard routes return 404.
 
-To exclude routes from profiling, use the `ignore` option (`'/health'`, globs like `'/static/*'`, or RegExps) or put `@DebugIgnore()` on a controller or handler. The panel's own routes are always excluded.
+To exclude routes from profiling, use the `ignore` option (`'/health'`, globs like `'/static/*'`, or RegExps), put `@DebugIgnore()` on a controller or handler, or add a rule from the dashboard — see [Ignoring noisy endpoints](#ignoring-noisy-endpoints) next. The panel's own routes are always excluded.
+
+## Ignoring noisy endpoints
+
+Behind a load balancer, `/health` gets hit every second or two. In a 200-profile
+buffer that means 190 health checks and 10 real requests — the ones you opened
+the panel to look at are already evicted.
+
+Click **Ignored** in the topbar to fix that without a redeploy. Add `/health`,
+and matching requests are dropped **at capture time**, so the buffer fills with
+traffic you care about instead:
+
+| In the dialog | What it does |
+| --- | --- |
+| **Add** | Start ignoring a path. `/health` also covers `/health/db`; `*` matches anything (`/v1/*/ping`). |
+| **Edit** | Change the pattern or its note. |
+| **on** toggle | Stop applying a rule without deleting it — useful when you want one look at that endpoint. |
+| **Delete** | Capture it again. |
+| *n* **skipped** | How many requests that rule has dropped since the process started, so you can see it working. |
+
+Two things worth knowing:
+
+- Rules apply to **future** requests only. Health checks already in the list stay there — hit **Clear** once after adding the rule.
+- Rules are saved in the active storage driver. With the default in-memory store they last as long as the process; with `NEST_DEBUG_PANEL_STORAGE=redis` they're **shared by every process** and survive restarts, so adding `/health` in the API panel also stops the worker from capturing it (within a few seconds).
+
+Patterns from the `ignore` option appear in the same list marked **read-only** —
+one place to see every reason a request might be missing. To turn editing off
+entirely and keep the dialog as a viewer, set `runtimeIgnore: false`.
+
+The rules are plain HTTP, so scripts and provisioning can use them too:
+
+```bash
+curl -X POST     'localhost:3000/__debug/filters?pattern=/health&note=k8s%20probe'
+curl -X PATCH    'localhost:3000/__debug/filters/<id>?enabled=false'
+curl -X DELETE   'localhost:3000/__debug/filters/<id>'
+curl -H 'accept: application/json' 'localhost:3000/__debug?feed=filters'
+```
 
 ## Works with any ORM, any database
 
@@ -391,6 +428,14 @@ The dashboard is plain HTML served by the package, but the same routes speak JSO
 | `/__debug` | GET | request list |
 | `/__debug/:id` | GET | full profile with timeline, SQL, Redis, HTTP, exception, memory, headers, body, response |
 | `/__debug` | DELETE | clears history |
+| `/__debug?feed=filters` | GET | [ignore rules](#ignoring-noisy-endpoints) + whether they're editable |
+| `/__debug/filters` | POST | add an ignore rule (`pattern`, optional `note`) |
+| `/__debug/filters/:id` | PATCH | update `pattern`, `note` or `enabled` |
+| `/__debug/filters/:id` | DELETE | delete one rule |
+
+Rule writes accept a JSON body or query parameters, so they work even if the host
+app boots without a body parser. A rejected rule answers `400` with
+`{ ok: false, error }` — the reason is safe to show to a user.
 
 Build your own frontend or tooling on top of it if you like.
 

@@ -13,6 +13,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Ignore noisy endpoints from the dashboard.** A new **Ignored** button in the
+  topbar opens a manager for the health checks, metrics scrapes and probes that
+  otherwise fill the buffer — behind a load balancer, `/health` can easily be 190
+  of the 200 kept profiles. Add, edit, toggle or delete a rule and matching
+  requests are dropped **at capture time**, so the buffer holds real traffic
+  instead. Patterns work exactly like the `ignore` option (`/health` covers
+  `/health/db`; `*` is a wildcard), each rule shows how many requests it has
+  skipped, and patterns declared in `forRoot({ ignore })` are listed alongside as
+  read-only so one screen explains every reason a request might be missing. Rules
+  persist through the active storage driver — with
+  `NEST_DEBUG_PANEL_STORAGE=redis` every process shares them, so a rule added in
+  the API panel also stops a separate worker from capturing that path. Set
+  `runtimeIgnore: false` to keep the dialog read-only. Also exposed over HTTP
+  (`POST`/`PATCH`/`DELETE /__debug/filters`, `GET /__debug?feed=filters`) for
+  scripting.
+- `DebugStorage` gained the optional pair `loadIgnoreRules()` /
+  `saveIgnoreRules()`. Custom drivers that skip them keep working — their rules
+  simply live for the lifetime of the process that added them.
+
+### Changed
+- Documented how the panel picks its Redis when an app runs several: resolution
+  order is `NEST_DEBUG_PANEL_REDIS_URL` → `REDIS_URL` →
+  `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD`/`REDIS_DB`, and
+  `NEST_DEBUG_PANEL_STORAGE=redis` alone is not enough — without an address it
+  warns and falls back to in-memory.
+
 ## [0.2.0] - 2026-07-23
 
 ### Added

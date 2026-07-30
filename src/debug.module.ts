@@ -16,6 +16,7 @@ import { PluginManager } from './plugins/plugin-manager.service';
 import { AutoInstrumentService } from './discovery/auto-instrument.service';
 import { SocketGatewayTracker } from './discovery/socket-gateway-tracker';
 import { JobTracker } from './discovery/job-tracker.service';
+import { IgnoreRulesService } from './filters/ignore-rules.service';
 import { MemoryStorage } from './storage/memory.storage';
 import { RedisStorage } from './storage/redis.storage';
 import type { DebugStorage } from './interfaces/storage.interface';
@@ -93,6 +94,7 @@ export class DebugModule {
         DebugInterceptor,
         SocketGatewayTracker,
         JobTracker,
+        IgnoreRulesService,
         {
           provide: DEBUG_STORAGE,
           useFactory: (resolved: ResolvedDebugOptions) => resolveStorage(resolved),
@@ -102,7 +104,14 @@ export class DebugModule {
         // SocketGatewayTracker), so both share one interceptor + one context.
         { provide: APP_INTERCEPTOR, useExisting: DebugInterceptor },
       ],
-      exports: [DEBUG_OPTIONS, DEBUG_STORAGE, DebugContextService, PluginManager, JobTracker],
+      exports: [
+        DEBUG_OPTIONS,
+        DEBUG_STORAGE,
+        DebugContextService,
+        PluginManager,
+        JobTracker,
+        IgnoreRulesService,
+      ],
     };
   }
 }
