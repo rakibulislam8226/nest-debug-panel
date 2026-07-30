@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-30
+
 ### Added
 - **Ignore noisy endpoints from the dashboard.** A new **Ignored** button in the
   topbar opens a manager for the health checks, metrics scrapes and probes that
@@ -120,5 +122,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Auto-instrumentation only warns that raw SQL is unavailable when neither a
   driver adapter nor query-event logging is present.
 
-[Unreleased]: https://github.com/rakibulislam8226/nest-debug-panel/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/rakibulislam8226/nest-debug-panel/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/rakibulislam8226/nest-debug-panel/compare/v0.2.0...v1.2.0
 [0.2.0]: https://github.com/rakibulislam8226/nest-debug-panel/compare/v0.1.7...v0.2.0
