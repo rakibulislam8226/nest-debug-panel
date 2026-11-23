@@ -56,7 +56,7 @@ http://localhost:<your-port>/__debug
 
 That's it. Hit any endpoint of your API and watch it appear in the dashboard (it refreshes every 2 seconds). If the list stays empty, make sure `NODE_ENV` isn't `production`, pass `enabled: true` explicitly, or set `NEST_DEBUG_PANEL_ENABLED=true` in your environment (see [Enabling & disabling](#enabling--disabling)).
 
-Works with Node.js 18+, NestJS 9/10/11, and both Express and Fastify. No runtime dependencies.
+Works with Node.js 18+, NestJS 9/10/11/12, and both Express and Fastify. No runtime dependencies. (NestJS 12 is ESM-only, so it needs a Node.js version that can `require()` ES modules — 20.19+ or 22.12+ — which NestJS 12 already expects.)
 
 ## What gets captured
 
@@ -455,6 +455,7 @@ Build your own frontend or tooling on top of it if you like.
   ```
 - Sensitive body keys and headers are redacted before anything is stored.
 - Gate the dashboard with `authorize: (req) => req.user?.isAdmin === true`.
+- **Works behind the app's global guards, global prefix and `helmet()`.** The panel's routes skip global guards (`APP_GUARD` / `app.useGlobalGuards()`), so a global JWT/session guard doesn't answer `401` on the dashboard; other routes stay guarded. Because those guards are skipped, `req.user` isn't set on panel requests, so an `authorize` callback should check something on the request itself (a header, IP, cookie). Set `bypassAppGuards: false` to keep the app's guards on the panel. With `app.setGlobalPrefix('api')` the panel is at `/api/__debug`, and its pages send their own CSP so `helmet()` doesn't block the dashboard scripts.
 - Profiles live in process memory by default and never leave your machine.
 
 ## Storage

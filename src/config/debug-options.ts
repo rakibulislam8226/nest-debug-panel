@@ -91,6 +91,15 @@ export interface DebugModuleOptions {
   /** Gate access to the debug API/UI (e.g. only admins). */
   authorize?: (request: unknown) => boolean | Promise<boolean>;
   /**
+   * Let the panel's own routes past the host app's global guards (`APP_GUARD`
+   * providers and `app.useGlobalGuards()`), e.g. a global JWT/session guard or
+   * rate limiter, so the dashboard opens with no changes to the app. Only the
+   * panel's routes skip them; every other route is guarded exactly as before.
+   * Access to the panel is then decided by `enabled` and `authorize`.
+   * Set false to keep the app's global guards on the panel too. Default true.
+   */
+  bypassAppGuards?: boolean;
+  /**
    * Storage driver. Default: in-memory ring buffer.
    *
    * To share captures across processes (an API + a separate worker), set the
@@ -136,6 +145,7 @@ export interface ResolvedDebugOptions {
   maxBodyLength: number;
   getUser?: (request: unknown) => unknown;
   authorize?: (request: unknown) => boolean | Promise<boolean>;
+  bypassAppGuards: boolean;
   storage?: DebugStorage;
   plugins: DebugPlugin[];
 }
@@ -186,6 +196,7 @@ export function resolveDebugOptions(options: DebugModuleOptions = {}): ResolvedD
     maxBodyLength: options.maxBodyLength ?? 64 * 1024,
     getUser: options.getUser,
     authorize: options.authorize,
+    bypassAppGuards: options.bypassAppGuards ?? true,
     storage: options.storage,
     plugins: options.plugins ?? [],
   };

@@ -181,3 +181,30 @@ describe('DebugModule on Fastify', () => {
     return res.body as unknown[];
   }
 });
+
+describe('DebugModule on Fastify behind a global prefix', () => {
+  let app: NestFastifyApplication;
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [DebugModule.forRoot({ enabled: true }), FastifyTestModule],
+    }).compile();
+    app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+    app.setGlobalPrefix('api');
+    await app.init();
+    await app.getHttpAdapter().getInstance().ready();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('points the dashboard at the prefixed path, with the panel CSP', async () => {
+    const page = await request(app.getHttpServer())
+      .get('/api/__debug')
+      .set('accept', 'text/html')
+      .expect(200);
+    expect(page.text).toContain("var PREFIX = '/api/__debug'");
+    expect(page.headers['content-security-policy']).toContain("'unsafe-inline'");
+  });
+});

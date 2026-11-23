@@ -13,7 +13,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **NestJS 12 support.** `@nestjs/common` and `@nestjs/core` peer ranges now
+  include `^12.0.0`, so installing into a Nest 12 app no longer fails with
+  `ERESOLVE`. No code changes were needed: the CommonJS build loads Nest 12's
+  ESM-only packages through Node's `require(esm)` (Node.js 20.19+ / 22.12+,
+  which Nest 12 already requires). Verified on Express and Fastify. Nest 9–11
+  are unaffected.
+
+- **The panel opens in apps with a global auth guard, with no app changes.** A
+  global guard (`APP_GUARD` or `app.useGlobalGuards()`), such as a JWT/session
+  guard, answered `401` on the dashboard because it has no session. The panel's
+  own routes now skip the host app's global guards; every other route is guarded
+  exactly as before, and `enabled` / `authorize` still decide who can open the
+  panel. Set `bypassAppGuards: false` to keep the app's guards on the panel.
+
 ### Fixed
+- **Dashboard broken behind `app.setGlobalPrefix()`.** The page was served at
+  `/api/__debug`, but its links and `fetch()` calls still went to `/__debug`
+  and got 404s. They now follow the path the panel is actually mounted at.
+- **Blank dashboard with `helmet()`.** Helmet's default CSP
+  (`script-src 'self'; script-src-attr 'none'`) blocked the dashboard's inline
+  scripts. The panel's HTML pages now send their own CSP; the app's other
+  routes keep helmet's.
 - **Deleting an ignore rule failed on Fastify.** The dashboard set
   `content-type: application/json` on every rule request, including the body-less
   `DELETE`; Fastify rejects an empty body sent with that content-type, so the
