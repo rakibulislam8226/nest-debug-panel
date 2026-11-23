@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # needed only to push the release tag
-      id-token: write # npm trusted publishing (OIDC): no NPM_TOKEN to expire
     steps:
       - uses: actions/checkout@v4
 
@@ -55,19 +54,10 @@ jobs:
           npm version "$NEXT" --no-git-tag-version --allow-same-version
           echo "next=$NEXT" >> "$GITHUB_OUTPUT"
 
-      # Trusted publishing: npm exchanges this run's GitHub OIDC token for a
-      # one-off publish credential, so there is no long-lived NPM_TOKEN secret
-      # (npm caps write tokens at 90 days; an expired one fails the publish
-      # with a misleading "404 Not Found - PUT"). Needs npm >= 11.5.1 and the
-      # trusted publisher set up on npmjs.com (package Settings -> Trusted
-      # Publisher -> GitHub Actions, workflow file "publish.yml").
-      # A failed publish never tags or bumps anything, so the next run
-      # releases the same version again: no gaps on npm.
-      - name: Use an npm that supports trusted publishing
-        run: npm install -g npm@11
-
       - name: Publish
         run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # Tag pushes are allowed on protected branches, so releases stay
       # traceable in git even though no commit lands on master.
