@@ -5,6 +5,7 @@ import request from 'supertest';
 import { DebugModule } from '../src/debug.module';
 import { DebugContextService } from '../src/context/debug-context.service';
 import { DebugIgnore } from '../src/decorators/debug-ignore.decorator';
+import { mountPath } from '../src/api/debug.controller';
 import type { RequestProfile, RequestSummary } from '../src/interfaces/profile.interface';
 
 @Injectable()
@@ -329,5 +330,66 @@ describe('DebugModule custom prefix + authorize', () => {
     );
     await request(app.getHttpServer()).get('/__debug').expect(403);
     await request(app.getHttpServer()).get('/__debug').set('x-debug-key', 'secret').expect(200);
+  });
+});
+
+/**
+ * `app.setGlobalPrefix('api')` moves the panel to `/api/__debug`. The pages must
+ * point their links and fetch() calls there, not at the bare `/__debug`.
+ */
+describe('DebugModule behind a global prefix', () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [DebugModule.forRoot({ enabled: true }), TestModule],
+    }).compile();
+    app = moduleRef.createNestApplication();
+    app.setGlobalPrefix('api');
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('serves the dashboard at the prefixed path and points it there', async () => {
+    await request(app.getHttpServer()).get('/api/users').expect(200);
+    const page = await request(app.getHttpServer())
+      .get('/api/__debug')
+      .set('accept', 'text/html')
+      .expect(200);
+    expect(page.text).toContain("var PREFIX = '/api/__debug'");
+
+    const list = await request(app.getHttpServer()).get('/api/__debug').expect(200);
+    const detail = await request(app.getHttpServer())
+      .get(`/api/__debug/${list.body[0].id}`)
+      .set('accept', 'text/html')
+      .expect(200);
+    expect(detail.text).toContain("fetch('/api/__debug'");
+    expect(detail.text).toContain('href="/api/__debug#/');
+    expect(detail.text).not.toMatch(/["']\/__debug/);
+  });
+
+  it('sends its own CSP on HTML pages so a host helmet() cannot block the scripts', async () => {
+    const page = await request(app.getHttpServer())
+      .get('/api/__debug')
+      .set('accept', 'text/html')
+      .expect(200);
+    expect(page.headers['content-security-policy']).toContain("script-src 'self' 'unsafe-inline'");
+    expect(page.headers['content-security-policy']).toContain("script-src-attr 'unsafe-inline'");
+
+    const json = await request(app.getHttpServer()).get('/api/__debug').expect(200);
+    expect(json.headers['content-security-policy']).toBeUndefined();
+  });
+});
+
+describe('mountPath', () => {
+  it('finds the mount point under any prefix, and falls back on anything odd', () => {
+    expect(mountPath({ url: '/__debug' }, '__debug')).toBe('__debug');
+    expect(mountPath({ originalUrl: '/api/v1/__debug/abc?x=1' }, '__debug')).toBe('api/v1/__debug');
+    expect(mountPath({ url: '/__debugger/__debug' }, '__debug')).toBe('__debugger/__debug');
+    expect(mountPath({ url: "/a'b/__debug" }, '__debug')).toBe('__debug');
+    expect(mountPath({}, '__debug')).toBe('__debug');
   });
 });

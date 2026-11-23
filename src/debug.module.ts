@@ -11,6 +11,7 @@ import { DebugContextService } from './context/debug-context.service';
 import { LogCaptureService } from './logging/log-capture.service';
 import { DebugInterceptor } from './interceptor/debug.interceptor';
 import { DebugAccessGuard } from './guards/debug-access.guard';
+import { AppGuardBypassService } from './guards/app-guard-bypass.service';
 import { DebugController } from './api/debug.controller';
 import { PluginManager } from './plugins/plugin-manager.service';
 import { AutoInstrumentService } from './discovery/auto-instrument.service';
@@ -89,6 +90,7 @@ export class DebugModule {
         DebugContextService,
         LogCaptureService,
         DebugAccessGuard,
+        AppGuardBypassService,
         PluginManager,
         AutoInstrumentService,
         DebugInterceptor,

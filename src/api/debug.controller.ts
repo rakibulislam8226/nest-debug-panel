@@ -27,6 +27,9 @@ import { renderDetailPage } from '../ui/render-detail';
 
 interface NegotiableRequest {
   headers?: Record<string, unknown>;
+  /** Express keeps the full path (global prefix included) here. */
+  originalUrl?: string;
+  url?: string;
 }
 
 /**
@@ -168,7 +171,7 @@ export class DebugController {
     // HTML path skips the list() call entirely.
     if (wantsHtml(request)) {
       try {
-        send(response, 200, HTML, renderListPage(this.options.routePrefix));
+        send(response, 200, HTML, renderListPage(mountPath(request, this.options.routePrefix)));
         return;
       } catch {
         /* rendering failed — fall back to JSON below */
@@ -264,7 +267,11 @@ export class DebugController {
           response,
           200,
           HTML,
-          renderDetailPage(profile, this.options.routePrefix, this.options.slowQueryThreshold),
+          renderDetailPage(
+            profile,
+            mountPath(request, this.options.routePrefix),
+            this.options.slowQueryThreshold,
+          ),
         );
         return;
       } catch {
@@ -288,6 +295,48 @@ export class DebugController {
 
 const HTML = 'text/html; charset=utf-8';
 const JSON_TYPE = 'application/json; charset=utf-8';
+
+/**
+ * Where the panel is actually mounted, without the leading slash. Usually just
+ * `routePrefix`, but `app.setGlobalPrefix('api')` moves it to `api/__debug` —
+ * and the dashboard's links and fetch() calls must follow, or they hit 404s.
+ * Read from the live request so no option is needed; anything that isn't a
+ * plain path falls back to `routePrefix`, since the result is put into HTML/JS.
+ */
+export function mountPath(request: NegotiableRequest, routePrefix: string): string {
+  const path = String(request?.originalUrl ?? request?.url ?? '').split(/[?#]/)[0];
+  const needle = `/${routePrefix}`;
+  let at = path.indexOf(needle);
+  while (at !== -1) {
+    const end = at + needle.length;
+    if (end === path.length || path[end] === '/') {
+      const mount = path.slice(1, end);
+      return /^[A-Za-z0-9._~\-/]+$/.test(mount) ? mount : routePrefix;
+    }
+    at = path.indexOf(needle, at + 1);
+  }
+  return routePrefix;
+}
+
+/**
+ * The pages run inline scripts and inline `onclick` handlers. A host app's
+ * `helmet()` sends `script-src 'self'; script-src-attr 'none'`, which blocks
+ * them and leaves the dashboard blank, so panel pages send their own policy.
+ * Only the panel's HTML responses get it; the host app's routes are untouched.
+ */
+const PANEL_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "script-src-attr 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'self'",
+  "object-src 'none'",
+].join('; ');
 
 function wantsHtml(request: NegotiableRequest): boolean {
   const accept = String(request?.headers?.['accept'] ?? '');
@@ -324,11 +373,15 @@ function send(
   contentType: string,
   payload: string,
 ): void {
+  const headers: Array<[string, string]> = [['content-type', contentType]];
+  if (contentType === HTML) headers.push(['content-security-policy', PANEL_CSP]);
   // Express res / Fastify reply: both expose status() and send().
   if (typeof response?.status === 'function' && typeof response?.send === 'function') {
-    if (typeof response.header === 'function') response.header('content-type', contentType);
-    else if (typeof response.set === 'function') response.set('content-type', contentType);
-    else response.setHeader?.('content-type', contentType);
+    for (const [name, value] of headers) {
+      if (typeof response.header === 'function') response.header(name, value);
+      else if (typeof response.set === 'function') response.set(name, value);
+      else response.setHeader?.(name, value);
+    }
     response.status(statusCode);
     response.send(payload);
     return;
@@ -337,7 +390,7 @@ function send(
   const raw = response?.raw ?? response;
   if (raw) {
     raw.statusCode = statusCode;
-    raw.setHeader?.('content-type', contentType);
+    for (const [name, value] of headers) raw.setHeader?.(name, value);
     raw.end?.(payload);
   }
 }
